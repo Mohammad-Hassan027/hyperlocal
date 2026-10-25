@@ -1,0 +1,209 @@
+@import "tailwindcss";
+@import "@fontsource/yatra-one/latin-400.css";
+@import "@fontsource/yatra-one/devanagari-400.css";
+@import "@fontsource/mukta/latin-400.css";
+@import "@fontsource/mukta/latin-600.css";
+@import "@fontsource/mukta/latin-700.css";
+@import "@fontsource/mukta/devanagari-400.css";
+@import "@fontsource/mukta/devanagari-600.css";
+@import "@fontsource/mukta/devanagari-700.css";
+
+/*
+  Design notes
+  - Setting: the neighbourhood notice board. Workers are photocopied flyers with tear-off tabs.
+  - Paper colour = trade (plumbers on blue, electricians on yellow...). It repeats everywhere.
+  - Neel (laundry-blue indigo) is the ink and chrome; marigold is reserved for the one action per view.
+  - Yatra One for signboard-style headings and prices, Mukta for everything you read.
+*/
+
+@theme {
+  --font-display: "Yatra One", "Mukta", ui-serif, Georgia, serif;
+  --font-body: "Mukta", ui-sans-serif, system-ui, sans-serif;
+
+  --color-wall: #e4e9f5;
+  --color-paper: #fffffe;
+  --color-ink: #0f1a4d;
+  --color-neel: #1f2e86;
+  --color-neel-hover: #2c3fa8;
+  --color-muted: #525d89;
+  --color-line: #c1c9e2;
+  --color-marigold: #f4a300;
+  --color-marigold-hover: #ffb81f;
+  --color-marigold-soft: #fdeab5;
+  --color-signal: #17783f;
+  --color-chilli: #b83420;
+}
+
+/* perforation lines between tear-off cells (utilities so responsive variants work) */
+@utility tear-t {
+  border-top: 2px dashed rgb(15 26 77 / 0.35);
+}
+@utility tear-l {
+  border-left: 2px dashed rgb(15 26 77 / 0.35);
+}
+@utility tear-b {
+  border-bottom: 2px dashed rgb(15 26 77 / 0.3);
+}
+
+html {
+  color-scheme: light;
+}
+
+body {
+  font-family: var(--font-body);
+  font-size: 1.0625rem;
+  line-height: 1.55;
+  color: var(--color-ink);
+  background-color: var(--color-wall);
+  /* limewashed wall: faint neel-tinted grain */
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .06 0 0 0 0 .1 0 0 0 0 .3 0 0 0 .08 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-display);
+  font-weight: 400;
+  line-height: 1.1;
+}
+
+:focus-visible {
+  outline: 3px solid var(--color-neel);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+.on-dark :focus-visible {
+  outline-color: var(--color-marigold);
+}
+
+::selection {
+  background: var(--color-marigold);
+  color: var(--color-ink);
+}
+
+@layer components {
+  /* paper pinned to the wall */
+  .flyer {
+    background: var(--color-paper);
+    border-radius: 3px;
+    box-shadow:
+      0 1px 0 rgb(15 26 77 / 0.2),
+      0 12px 18px -14px rgb(15 26 77 / 0.5);
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    min-height: 44px;
+    padding: 0.4rem 1.15rem;
+    border-radius: 6px;
+    font-weight: 700;
+    line-height: 1.2;
+    cursor: pointer;
+    transition:
+      transform 80ms,
+      box-shadow 80ms,
+      background-color 150ms;
+  }
+  .btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+  /* pressable, like a hardware-shop rubber button */
+  .btn-go {
+    background: var(--color-marigold);
+    color: var(--color-ink);
+    box-shadow: 0 3px 0 var(--color-ink);
+  }
+  .btn-go:hover:not(:disabled) {
+    background: var(--color-marigold-hover);
+  }
+  .btn-neel {
+    background: var(--color-neel);
+    color: #fff;
+    box-shadow: 0 3px 0 var(--color-ink);
+  }
+  .btn-neel:hover:not(:disabled) {
+    background: var(--color-neel-hover);
+  }
+  .btn-go:active:not(:disabled),
+  .btn-neel:active:not(:disabled) {
+    transform: translateY(2px);
+    box-shadow: 0 1px 0 var(--color-ink);
+  }
+  .btn-line {
+    border: 2px solid var(--color-ink);
+    color: var(--color-ink);
+    background: transparent;
+  }
+  .btn-line:hover:not(:disabled) {
+    background: rgb(15 26 77 / 0.07);
+  }
+
+  .field {
+    width: 100%;
+    min-height: 44px;
+    padding: 0.4rem 0.7rem;
+    background: #fff;
+    color: var(--color-ink);
+    border: 2px solid rgb(15 26 77 / 0.35);
+    border-radius: 6px;
+  }
+  .field:hover {
+    border-color: rgb(15 26 77 / 0.6);
+  }
+  .field:focus {
+    border-color: var(--color-ink);
+  }
+
+  .label {
+    display: block;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--color-muted);
+    margin-bottom: 0.25rem;
+  }
+
+  /* prices and counts are set like painted signs */
+  .num {
+    font-family: var(--font-display);
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@keyframes pulse-ring {
+  0% {
+    box-shadow: 0 0 0 0 rgb(23 120 63 / 0.55);
+  }
+  100% {
+    box-shadow: 0 0 0 9px rgb(23 120 63 / 0);
+  }
+}
+.pulse-ring {
+  animation: pulse-ring 1.5s ease-out infinite;
+}
+
+@keyframes dialog-in {
+  from {
+    transform: translateY(14px);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+.dialog-in {
+  animation: dialog-in 180ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}

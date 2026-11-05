@@ -24,4 +24,18 @@ export interface StoreAdapter {
   advanceJob(jobId: string): Promise<void> | void;
   submitReview(jobId: string, rating: number, text: string): Promise<void> | void;
   setDemoSpeed(speed: number): void;
+  customerCounterOffer(
+    jobId: string,
+    offerId: string,
+    price: number,
+  ): Promise<void> | void;
+  workerRespondToCounter(
+    jobId: string,
+    offerId: string,
+    decision: "accept" | "decline",
+  ): Promise<void> | void;
+  declineJob(jobId: string, workerId: string): Promise<void> | void;
+  switchToScheduled(jobId: string, scheduledFor?: string): Promise<void> | void;
+  dismissNotification(id: string): void;
+  clearNotifications(): void;
 }

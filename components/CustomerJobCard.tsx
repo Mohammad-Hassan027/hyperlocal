@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { etaMinutes, fmtKm, fmtWhen, haversineKm, inr } from "@/lib/geo";
 import { categoryById } from "@/lib/seed";
-import { acceptOffer, cancelJob, submitReview, updateBudget, useStore } from "@/lib/store";
+import { acceptOffer, cancelJob, customerCounterOffer, submitReview, switchToScheduled, updateBudget, useStore } from "@/lib/store";
 import type { Job } from "@/lib/types";
 import { Badges, Monogram, Star, StatusTag, Stars } from "./ui";
 
@@ -15,6 +15,8 @@ export default function CustomerJobCard({ job }: { job: Job }) {
   const [newBudget, setNewBudget] = useState(job.budget);
   const [rating, setRating] = useState(5);
   const [text, setText] = useState("");
+  const [counterValues, setCounterValues] = useState<Record<string, number>>({});
+  const [openCounterOfferId, setOpenCounterOfferId] = useState<string | null>(null);
 
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -23,6 +25,19 @@ export default function CustomerJobCard({ job }: { job: Job }) {
     return () => clearInterval(t);
   }, [job.status]);
   const waited = Math.max(0, Math.floor((now - job.createdAt) / 1000));
+
+  // 30-minute promise calculations
+  const effectiveElapsedSec = Math.max(0, (now - job.createdAt) / 1000) * (demoSpeed || 1);
+  const expansionIncrements = Math.floor(effectiveElapsedSec / 60);
+  const searchRadius = Math.min(25, job.radiusKm + expansionIncrements * 3);
+  const isRadiusWidened =
+    job.status === "open" && job.mode === "on-demand" && searchRadius > job.radiusKm;
+  const canOfferSchedule =
+    job.status === "open" && job.mode === "on-demand" && effectiveElapsedSec >= 300;
+  const isExpired =
+    job.status === "expired" ||
+    (job.status === "open" &&
+      now >= (job.expiresAt ?? job.createdAt + 15 * 60 * 1000));
 
   // Compute live ETA derived strictly from acceptedAt
   const totalTripSec = 500 / demoSpeed;
@@ -62,15 +77,53 @@ export default function CustomerJobCard({ job }: { job: Job }) {
           </dl>
         </div>
 
-        {job.status === "open" && (
-          <>
-            <p className="flex items-center gap-2.5 rounded-md bg-marigold-soft px-3 py-2 text-[15px] font-semibold" aria-live="polite">
-              <span aria-hidden="true" className="size-2.5 animate-pulse rounded-full bg-marigold ring-2 ring-ink" />
-              Sent to {job.broadcastTo.length} worker{job.broadcastTo.length === 1 ? "" : "s"}. Waiting{" "}
-              <span className="num">
-                {Math.floor(waited / 60)}:{String(waited % 60).padStart(2, "0")}
-              </span>
+        {isExpired && (
+          <div className="rounded-md border-2 border-chilli/40 bg-chilli/10 p-3.5">
+            <p className="font-bold text-chilli">Request expired</p>
+            <p className="mt-1 text-sm text-muted">
+              No workers accepted within 15 minutes. You can increase your budget, widen your search, or schedule for a specific time.
             </p>
+          </div>
+        )}
+
+        {job.status === "open" && !isExpired && (
+          <>
+            <div className="space-y-2">
+              <p className="flex items-center gap-2.5 rounded-md bg-marigold-soft px-3 py-2 text-[15px] font-semibold" aria-live="polite">
+                <span aria-hidden="true" className="size-2.5 animate-pulse rounded-full bg-marigold ring-2 ring-ink" />
+                Sent to {job.broadcastTo.length} worker{job.broadcastTo.length === 1 ? "" : "s"}. Waiting{" "}
+                <span className="num">
+                  {Math.floor(waited / 60)}:{String(waited % 60).padStart(2, "0")}
+                </span>
+              </p>
+
+              {isRadiusWidened && (
+                <div className="flex items-center justify-between gap-2 rounded-md border border-ink/25 bg-wall px-3 py-1.5 text-xs font-semibold text-ink">
+                  <span className="flex items-center gap-2">
+                    <span className="size-2 animate-ping rounded-full bg-neel" />
+                    30-minute promise
+                  </span>
+                  <span className="rounded bg-ink px-2 py-0.5 text-white font-bold">
+                    Searching wider: {searchRadius} km
+                  </span>
+                </div>
+              )}
+
+              {canOfferSchedule && (
+                <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border-2 border-ink/20 bg-paper p-3 text-xs sm:text-sm">
+                  <div>
+                    <p className="font-bold">Need this done at a convenient time?</p>
+                    <p className="text-muted">Over 5 min waiting. Offline workers can be booked if you pick a time.</p>
+                  </div>
+                  <button
+                    onClick={() => switchToScheduled(job.id)}
+                    className="btn btn-go min-h-[38px] px-3 py-1 text-xs"
+                  >
+                    Schedule instead
+                  </button>
+                </div>
+              )}
+            </div>
 
             {offers.length > 0 && (
               <section aria-label="Counter-offers">
@@ -82,31 +135,111 @@ export default function CustomerJobCard({ job }: { job: Job }) {
                     const w = workers.find((x) => x.id === o.workerId)!;
                     const d = haversineKm(job.customerLoc, w.loc);
                     const over = o.price - job.budget;
+                    const hasCountered = o.customerCounterPrice !== undefined;
+                    const isOpenCounterBox = openCounterOfferId === o.id;
+                    const myCounterVal = counterValues[o.id] ?? Math.round((job.budget + o.price) / 2 / 10) * 10;
+
                     return (
-                      <li key={o.id} className={`flex flex-wrap items-center gap-x-4 gap-y-2 py-3 ${i > 0 ? "tear-t" : ""}`}>
-                        <Monogram name={w.name} tone={cat.tone} />
-                        <div className="min-w-44 flex-1">
-                          <p className="flex flex-wrap items-center gap-x-3 font-bold">
-                            {w.name} <Stars value={w.rating} />
-                          </p>
-                          <p className="text-sm text-muted">
-                            {fmtKm(d)} away, about {etaMinutes(d)} min
-                          </p>
-                          <div className="mt-1">
-                            <Badges badges={w.badges} />
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <div className="text-right">
-                            <div className="num text-2xl leading-none">{inr(o.price)}</div>
-                            <div className="mt-0.5 text-xs font-semibold text-muted">
-                              {over > 0 ? `${inr(over)} over budget` : "within budget"}
+                      <li key={o.id} className={`space-y-3 py-3 ${i > 0 ? "tear-t" : ""}`}>
+                        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+                          <Monogram name={w.name} tone={cat.tone} />
+                          <div className="min-w-44 flex-1">
+                            <p className="flex flex-wrap items-center gap-x-3 font-bold">
+                              {w.name} <Stars value={w.rating} />
+                            </p>
+                            <p className="text-sm text-muted">
+                              {fmtKm(d)} away, about {etaMinutes(d)} min
+                            </p>
+                            <div className="mt-1">
+                              <Badges badges={w.badges} />
                             </div>
                           </div>
-                          <button onClick={() => acceptOffer(job.id, o.id)} className="btn btn-neel">
-                            Accept
-                          </button>
+                          <div className="flex items-center gap-2.5">
+                            <div className="text-right">
+                              <div className="num text-2xl leading-none">{inr(o.price)}</div>
+                              <div className="mt-0.5 text-xs font-semibold text-muted">
+                                {over > 0 ? `${inr(over)} over budget` : "within budget"}
+                              </div>
+                            </div>
+                            {!hasCountered && (
+                              <div className="flex items-center gap-1.5">
+                                <button onClick={() => acceptOffer(job.id, o.id)} className="btn btn-neel text-sm min-h-[38px] px-3">
+                                  Accept
+                                </button>
+                                <button
+                                  onClick={() =>
+                                    setOpenCounterOfferId(isOpenCounterBox ? null : o.id)
+                                  }
+                                  className="btn btn-line text-sm min-h-[38px] px-2.5"
+                                >
+                                  Counter
+                                </button>
+                              </div>
+                            )}
+                          </div>
                         </div>
+
+                        {/* Customer Counter Box (Round 2) */}
+                        {!hasCountered && isOpenCounterBox && (
+                          <div className="rounded-md border border-ink/20 bg-wall p-2.5 text-sm">
+                            <label htmlFor={`counter-input-${o.id}`} className="label text-xs">
+                              Propose your counter to {w.name.split(" ")[0]} (one round only)
+                            </label>
+                            <div className="flex items-center gap-2">
+                              <span className="num font-bold">₹</span>
+                              <input
+                                id={`counter-input-${o.id}`}
+                                type="number"
+                                step={10}
+                                min={50}
+                                max={o.price}
+                                value={myCounterVal}
+                                onChange={(e) =>
+                                  setCounterValues({
+                                    ...counterValues,
+                                    [o.id]: Number(e.target.value),
+                                  })
+                                }
+                                className="field num w-28 min-h-[36px] text-sm"
+                              />
+                              <button
+                                onClick={() => {
+                                  customerCounterOffer(job.id, o.id, myCounterVal);
+                                  setOpenCounterOfferId(null);
+                                }}
+                                className="btn btn-go text-xs min-h-[36px] px-3"
+                              >
+                                Send counter
+                              </button>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Negotiation Thread Display */}
+                        {hasCountered && (
+                          <div className="rounded-md border border-ink/20 bg-paper p-2.5 text-xs space-y-1">
+                            <span className="font-bold text-muted uppercase tracking-wider block">
+                              Negotiation thread
+                            </span>
+                            <div className="flex items-center justify-between">
+                              <span>1. {w.name.split(" ")[0]} countered:</span>
+                              <b className="num">{inr(o.price)}</b>
+                            </div>
+                            <div className="flex items-center justify-between">
+                              <span>2. You countered back:</span>
+                              <b className="num">{inr(o.customerCounterPrice!)}</b>
+                            </div>
+                            <div className="mt-1 font-semibold">
+                              {o.status === "declined" ? (
+                                <span className="text-chilli">✕ {w.name.split(" ")[0]} declined your counter.</span>
+                              ) : o.status === "accepted" ? (
+                                <span className="text-signal">✓ {w.name.split(" ")[0]} accepted your counter!</span>
+                              ) : (
+                                <span className="text-muted italic">Waiting for {w.name.split(" ")[0]} to accept or decline…</span>
+                              )}
+                            </div>
+                          </div>
+                        )}
                       </li>
                     );
                   })}

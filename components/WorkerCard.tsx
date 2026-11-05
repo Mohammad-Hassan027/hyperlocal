@@ -14,6 +14,8 @@ export default function WorkerCard({
   onBook,
   isHighlighted = false,
   onHover,
+  isBestMatch = false,
+  matchReason,
 }: {
   worker: Worker;
   category: CategoryId;
@@ -21,6 +23,8 @@ export default function WorkerCard({
   onBook: () => void;
   isHighlighted?: boolean;
   onHover?: (hovering: boolean) => void;
+  isBestMatch?: boolean;
+  matchReason?: string;
 }) {
   const [open, setOpen] = useState(false);
   const reviewsId = useId();
@@ -42,6 +46,14 @@ export default function WorkerCard({
           : ""
       }`}
     >
+      {isBestMatch && matchReason && (
+        <div className="flex items-center gap-2 border-b-2 border-ink bg-marigold px-4 py-1.5 text-xs font-bold text-ink">
+          <span className="rounded bg-ink px-1.5 py-0.5 text-[10px] font-extrabold uppercase tracking-wider text-white">
+            ★ Best match
+          </span>
+          <span className="truncate">{matchReason}</span>
+        </div>
+      )}
       <header className="flex items-center gap-3 px-4 py-3" style={{ background: tone }}>
         <Monogram name={worker.name} tone="#fffffe" />
         <div className="min-w-0 flex-1">

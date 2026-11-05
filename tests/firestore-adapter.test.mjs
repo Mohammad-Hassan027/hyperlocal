@@ -120,7 +120,7 @@ describe("Firestore Transaction Concurrency & Status Order", () => {
     function isValidStatusTransition(prev, next) {
       return (
         prev === next ||
-        (prev === "open" && (next === "accepted" || next === "cancelled")) ||
+        (prev === "open" && (next === "accepted" || next === "cancelled" || next === "expired")) ||
         (prev === "accepted" && (next === "in_progress" || next === "cancelled")) ||
         (prev === "in_progress" && next === "completed")
       );
@@ -130,6 +130,7 @@ describe("Firestore Transaction Concurrency & Status Order", () => {
     assert.strictEqual(isValidStatusTransition("accepted", "in_progress"), true);
     assert.strictEqual(isValidStatusTransition("in_progress", "completed"), true);
     assert.strictEqual(isValidStatusTransition("open", "cancelled"), true);
+    assert.strictEqual(isValidStatusTransition("open", "expired"), true);
     assert.strictEqual(isValidStatusTransition("accepted", "cancelled"), true);
 
     // Disallowed jumps

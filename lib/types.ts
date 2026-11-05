@@ -59,15 +59,27 @@ export type JobStatus =
   | "accepted"
   | "in_progress"
   | "completed"
-  | "cancelled";
+  | "cancelled"
+  | "expired";
+
+export interface NegotiationMessage {
+  sender: "customer" | "worker";
+  price: number;
+  createdAt: number;
+  note?: string;
+}
 
 export interface Offer {
   id: string;
   workerId: string;
   price: number;
   kind: "accept" | "counter";
-  status: "pending" | "accepted" | "rejected";
+  status: "pending" | "accepted" | "rejected" | "declined";
   createdAt: number;
+  /** Two-round negotiation: customer's counter to this worker's counter */
+  customerCounterPrice?: number;
+  customerCounterAt?: number;
+  thread?: NegotiationMessage[];
 }
 
 export interface Job {
@@ -90,6 +102,10 @@ export interface Job {
   startedAt?: number;
   completedAt?: number;
   review?: { rating: number; text: string };
+  /** Worker IDs who explicitly declined this request */
+  declinedBy?: string[];
+  /** When this job expires if not accepted (default 15 minutes) */
+  expiresAt?: number;
 }
 
 export interface CreateJobInput {
@@ -103,6 +119,16 @@ export interface CreateJobInput {
   preferredWorkerId?: string;
 }
 
+export interface AppNotification {
+  id: string;
+  type: "new_request" | "new_offer" | "counter_offer" | "job_accepted" | "job_expired";
+  title: string;
+  body: string;
+  jobId: string;
+  createdAt: number;
+  read: boolean;
+}
+
 export interface AppState {
   workers: Worker[];
   jobs: Job[];
@@ -113,4 +139,5 @@ export interface AppState {
   bots: boolean;
   /** Demo travel speed: 1 (real-time) or 20 (stage demo ~25s arrival) */
   demoSpeed: number;
+  notifications?: AppNotification[];
 }

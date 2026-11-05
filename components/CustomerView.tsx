@@ -8,11 +8,12 @@ import CustomerMapDynamic from "./map/CustomerMapDynamic";
 import WorkerCard from "./WorkerCard";
 import { Note } from "./ui";
 import { etaMinutes, haversineKm, PRESET_LOCATIONS } from "@/lib/geo";
+import { rankWorkers } from "@/lib/matching";
 import { CATEGORIES, categoryById } from "@/lib/seed";
 import { nearbyWorkers, setLocation, useStore } from "@/lib/store";
 import type { CategoryId, Worker } from "@/lib/types";
 
-type Sort = "distance" | "rating" | "price";
+type Sort = "match" | "distance" | "rating" | "price";
 
 export default function CustomerView() {
   const state = useStore((s) => s);
@@ -21,7 +22,7 @@ export default function CustomerView() {
 
   const [category, setCategory] = useState<CategoryId>(fromLink ?? "plumber");
   const [radius, setRadius] = useState(10);
-  const [sort, setSort] = useState<Sort>("distance");
+  const [sort, setSort] = useState<Sort>("match");
   const [onlineOnly, setOnlineOnly] = useState(false);
   const [tab, setTab] = useState<"find" | "bookings">("find");
   const [booking, setBooking] = useState<{ preferred?: Worker } | null>(null);
@@ -40,8 +41,15 @@ export default function CustomerView() {
     () => nearbyWorkers(state, state.location, radius, category),
     [state, radius, category],
   );
+
+  const rankedCandidates = useMemo(
+    () => rankWorkers(inRange, radius, undefined, category),
+    [inRange, radius, category],
+  );
+
   const results = useMemo(() => {
-    const list = inRange.filter((x) => !onlineOnly || x.worker.online);
+    const list = rankedCandidates.filter((x) => !onlineOnly || x.worker.online);
+    if (sort === "match") return list;
     return [...list].sort((a, b) =>
       sort === "distance"
         ? a.distanceKm - b.distanceKm
@@ -49,7 +57,7 @@ export default function CustomerView() {
           ? b.worker.rating - a.worker.rating
           : a.worker.baseRate - b.worker.baseRate,
     );
-  }, [inRange, onlineOnly, sort]);
+  }, [rankedCandidates, onlineOnly, sort]);
 
   const onlineNow = inRange.filter((x) => x.worker.online);
   const nearestOnline = onlineNow.length ? Math.min(...onlineNow.map((x) => x.distanceKm)) : null;
@@ -183,6 +191,7 @@ export default function CustomerView() {
                 Sort by
               </label>
               <select id="sort" value={sort} onChange={(e) => setSort(e.target.value as Sort)} className="field">
+                <option value="match">Best match</option>
                 <option value="distance">Nearest first</option>
                 <option value="rating">Best rated</option>
                 <option value="price">Lowest rate</option>
@@ -267,7 +276,7 @@ export default function CustomerView() {
             </Note>
           ) : (
             <div className="grid items-start gap-6 md:grid-cols-2">
-              {results.map(({ worker, distanceKm }) => (
+              {results.map(({ worker, distanceKm, isBestMatch, matchReason }) => (
                 <WorkerCard
                   key={worker.id}
                   worker={worker}
@@ -278,6 +287,8 @@ export default function CustomerView() {
                   onHover={(isHovering) =>
                     setHighlightedWorkerId(isHovering ? worker.id : null)
                   }
+                  isBestMatch={isBestMatch}
+                  matchReason={matchReason}
                 />
               ))}
             </div>

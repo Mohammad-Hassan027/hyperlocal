@@ -1,6 +1,8 @@
 import { PRESET_LOCATIONS, haversineKm } from "../geo";
+import { notifyUser } from "../notifications";
 import { SEED_WORKERS } from "../seed";
 import type {
+  AppNotification,
   AppState,
   CategoryId,
   CreateJobInput,
@@ -19,6 +21,7 @@ export const SEED_STATE: AppState = {
   myWorkerId: "w1",
   bots: true,
   demoSpeed: 20,
+  notifications: [],
 };
 
 const uid = () => Math.random().toString(36).slice(2, 9);
@@ -72,6 +75,25 @@ export class LocalStorageAdapter implements StoreAdapter {
   }
 
   getState(): AppState {
+    const now = Date.now();
+    let hasExpired = false;
+    const jobs = this.state.jobs.map((j) => {
+      if (
+        j.status === "open" &&
+        now >= (j.expiresAt ?? j.createdAt + 15 * 60 * 1000)
+      ) {
+        hasExpired = true;
+        return { ...j, status: "expired" as const };
+      }
+      return j;
+    });
+
+    if (hasExpired && typeof window !== "undefined") {
+      this.state = { ...this.state, jobs };
+      try {
+        localStorage.setItem(KEY, JSON.stringify(this.state));
+      } catch {}
+    }
     return this.state;
   }
 
@@ -144,6 +166,7 @@ export class LocalStorageAdapter implements StoreAdapter {
         .map((x) => x.worker.id);
     }
 
+    const now = Date.now();
     const job: Job = {
       id,
       category: input.category,
@@ -156,9 +179,26 @@ export class LocalStorageAdapter implements StoreAdapter {
       status: "open",
       broadcastTo,
       offers: [],
-      createdAt: Date.now(),
+      createdAt: now,
+      expiresAt: now + 15 * 60 * 1000,
     };
-    this.set({ ...this.state, jobs: [job, ...this.state.jobs] });
+
+    const notif: AppNotification = {
+      id: uid(),
+      type: "new_request",
+      title: "New local request",
+      body: `${input.description} (budget ₹${input.budget})`,
+      jobId: id,
+      createdAt: now,
+      read: false,
+    };
+    notifyUser(notif);
+
+    this.set({
+      ...this.state,
+      jobs: [job, ...this.state.jobs],
+      notifications: [notif, ...(this.state.notifications ?? [])].slice(0, 15),
+    });
 
     if (this.state.bots) {
       for (const wid of broadcastTo) {
@@ -194,14 +234,32 @@ export class LocalStorageAdapter implements StoreAdapter {
     const job = this.state.jobs.find((j) => j.id === jobId);
     if (!job || job.status !== "open" || (kind === "accept" && job.assignedWorkerId)) return;
 
+    const now = Date.now();
     const offer: Offer = {
       id: uid(),
       workerId,
       price,
       kind,
       status: kind === "accept" ? "accepted" : "pending",
-      createdAt: Date.now(),
+      createdAt: now,
+      thread: [{ sender: "worker", price, createdAt: now }],
     };
+
+    const worker = this.state.workers.find((w) => w.id === workerId);
+    const workerName = worker?.name ?? "A nearby worker";
+    const notif: AppNotification = {
+      id: uid(),
+      type: kind === "accept" ? "job_accepted" : "new_offer",
+      title: kind === "accept" ? "Job accepted!" : "New counter-offer",
+      body:
+        kind === "accept"
+          ? `${workerName} accepted your request for ₹${price}!`
+          : `${workerName} countered with ₹${price}`,
+      jobId,
+      createdAt: now,
+      read: false,
+    };
+    notifyUser(notif);
 
     const others = job.offers.filter((o) => o.workerId !== workerId);
     const next: Job =
@@ -215,13 +273,188 @@ export class LocalStorageAdapter implements StoreAdapter {
             status: "accepted",
             assignedWorkerId: workerId,
             finalPrice: price,
-            acceptedAt: Date.now(),
+            acceptedAt: now,
           }
         : { ...job, offers: [...others, offer] };
 
     this.set({
       ...this.state,
       jobs: this.state.jobs.map((j) => (j.id === jobId ? next : j)),
+      notifications: [notif, ...(this.state.notifications ?? [])].slice(0, 15),
+    });
+  }
+
+  customerCounterOffer(jobId: string, offerId: string, price: number): void {
+    const job = this.state.jobs.find((j) => j.id === jobId);
+    if (!job || job.status !== "open" || job.assignedWorkerId) return;
+
+    const offer = job.offers.find((o) => o.id === offerId);
+    if (!offer || offer.customerCounterPrice !== undefined) return; // Only counter once
+
+    const now = Date.now();
+    const nextOffers = job.offers.map((o) => {
+      if (o.id !== offerId) return o;
+      const thread = o.thread ?? [{ sender: "worker" as const, price: o.price, createdAt: o.createdAt }];
+      return {
+        ...o,
+        customerCounterPrice: price,
+        customerCounterAt: now,
+        thread: [...thread, { sender: "customer" as const, price, createdAt: now }],
+      };
+    });
+
+    const notif: AppNotification = {
+      id: uid(),
+      type: "counter_offer",
+      title: "Customer countered",
+      body: `Customer offered ₹${price} for "${job.description.slice(0, 30)}"`,
+      jobId,
+      createdAt: now,
+      read: false,
+    };
+    notifyUser(notif);
+
+    this.set({
+      ...this.state,
+      jobs: this.state.jobs.map((j) => (j.id === jobId ? { ...j, offers: nextOffers } : j)),
+      notifications: [notif, ...(this.state.notifications ?? [])].slice(0, 15),
+    });
+
+    // If worker is simulated bot, auto-evaluate
+    if (this.state.bots && offer.workerId !== this.state.myWorkerId) {
+      const worker = this.state.workers.find((w) => w.id === offer.workerId);
+      const delay = 1500 + Math.random() * 2500;
+      setTimeout(() => {
+        if (worker && price >= worker.baseRate * 0.9) {
+          this.workerRespondToCounter(jobId, offerId, "accept");
+        } else {
+          this.workerRespondToCounter(jobId, offerId, "decline");
+        }
+      }, delay);
+    }
+  }
+
+  workerRespondToCounter(
+    jobId: string,
+    offerId: string,
+    decision: "accept" | "decline",
+  ): void {
+    const job = this.state.jobs.find((j) => j.id === jobId);
+    if (!job || job.status !== "open" || job.assignedWorkerId) return;
+
+    const offer = job.offers.find((o) => o.id === offerId);
+    if (!offer || offer.customerCounterPrice === undefined) return;
+
+    const now = Date.now();
+    const worker = this.state.workers.find((w) => w.id === offer.workerId);
+    const workerName = worker?.name ?? "Worker";
+
+    if (decision === "accept") {
+      const finalPrice = offer.customerCounterPrice;
+      const nextOffers = job.offers.map((o) => ({
+        ...o,
+        status: o.id === offerId ? ("accepted" as const) : ("rejected" as const),
+      }));
+
+      const notif: AppNotification = {
+        id: uid(),
+        type: "job_accepted",
+        title: "Counter accepted!",
+        body: `${workerName} accepted your ₹${finalPrice} offer!`,
+        jobId,
+        createdAt: now,
+        read: false,
+      };
+      notifyUser(notif);
+
+      this.set({
+        ...this.state,
+        jobs: this.state.jobs.map((j) =>
+          j.id === jobId
+            ? {
+                ...j,
+                status: "accepted",
+                assignedWorkerId: offer.workerId,
+                finalPrice,
+                acceptedAt: now,
+                offers: nextOffers,
+              }
+            : j,
+        ),
+        notifications: [notif, ...(this.state.notifications ?? [])].slice(0, 15),
+      });
+    } else {
+      const nextOffers = job.offers.map((o) =>
+        o.id === offerId ? { ...o, status: "declined" as const } : o,
+      );
+
+      const notif: AppNotification = {
+        id: uid(),
+        type: "counter_offer",
+        title: "Counter declined",
+        body: `${workerName} declined your ₹${offer.customerCounterPrice} counter.`,
+        jobId,
+        createdAt: now,
+        read: false,
+      };
+      notifyUser(notif);
+
+      this.set({
+        ...this.state,
+        jobs: this.state.jobs.map((j) => (j.id === jobId ? { ...j, offers: nextOffers } : j)),
+        notifications: [notif, ...(this.state.notifications ?? [])].slice(0, 15),
+      });
+    }
+  }
+
+  declineJob(jobId: string, workerId: string): void {
+    const job = this.state.jobs.find((j) => j.id === jobId);
+    if (!job) return;
+
+    const declinedBy = job.declinedBy ?? [];
+    if (declinedBy.includes(workerId)) return;
+
+    this.set({
+      ...this.state,
+      jobs: this.state.jobs.map((j) =>
+        j.id === jobId ? { ...j, declinedBy: [...declinedBy, workerId] } : j,
+      ),
+    });
+  }
+
+  switchToScheduled(jobId: string, scheduledFor?: string): void {
+    const job = this.state.jobs.find((j) => j.id === jobId);
+    if (!job || job.status !== "open") return;
+
+    const defaultWhen =
+      scheduledFor ||
+      new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 16);
+
+    this.set({
+      ...this.state,
+      jobs: this.state.jobs.map((j) =>
+        j.id === jobId
+          ? {
+              ...j,
+              mode: "scheduled",
+              scheduledFor: defaultWhen,
+            }
+          : j,
+      ),
+    });
+  }
+
+  dismissNotification(id: string): void {
+    this.set({
+      ...this.state,
+      notifications: (this.state.notifications ?? []).filter((n) => n.id !== id),
+    });
+  }
+
+  clearNotifications(): void {
+    this.set({
+      ...this.state,
+      notifications: [],
     });
   }
 

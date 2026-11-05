@@ -2,24 +2,52 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import NotificationToast from "./NotificationToast";
 import { resetDemo, setBots, setDemoSpeed, useStore } from "@/lib/store";
 
 export default function Header() {
   const pathname = usePathname();
   const bots = useStore((s) => s.bots);
   const demoSpeed = useStore((s) => s.demoSpeed ?? 20);
+  const jobs = useStore((s) => s.jobs);
+  const myId = useStore((s) => s.myWorkerId);
+  const me = useStore((s) => s.workers.find((w) => w.id === myId));
 
-  const tab = (href: string, label: string) => {
+  const workerBadgeCount = jobs.filter(
+    (j) =>
+      j.status === "open" &&
+      j.broadcastTo.includes(myId) &&
+      !j.declinedBy?.includes(myId) &&
+      (me?.online || j.mode === "scheduled"),
+  ).length;
+
+  const customerBadgeCount = jobs.filter(
+    (j) =>
+      (j.status === "open" && j.offers.some((o) => o.status === "pending")) ||
+      j.status === "accepted",
+  ).length;
+
+  const tab = (href: string, label: string, count?: number) => {
     const active = pathname.startsWith(href);
     return (
       <Link
         href={href}
         aria-current={active ? "page" : undefined}
-        className={`rounded-[4px] px-4 py-1.5 text-base font-bold transition-colors ${
+        className={`flex items-center gap-1.5 rounded-[4px] px-3.5 py-1.5 text-base font-bold transition-colors ${
           active ? "bg-marigold text-ink" : "text-white hover:bg-white/15"
         }`}
       >
-        {label}
+        <span>{label}</span>
+        {count !== undefined && count > 0 && (
+          <span
+            aria-label={`${count} notifications`}
+            className={`num rounded-full px-1.5 py-0.5 text-xs font-extrabold leading-none ${
+              active ? "bg-ink text-white" : "bg-marigold text-ink"
+            }`}
+          >
+            {count}
+          </span>
+        )}
       </Link>
     );
   };
@@ -32,8 +60,8 @@ export default function Header() {
         </Link>
 
         <nav className="flex gap-1 rounded-md border-2 border-white/35 p-0.5" aria-label="Switch between customer and worker view">
-          {tab("/customer", "Customer")}
-          {tab("/worker", "Worker")}
+          {tab("/customer", "Customer", customerBadgeCount)}
+          {tab("/worker", "Worker", workerBadgeCount)}
         </nav>
 
         <details className="relative text-sm">
@@ -94,6 +122,7 @@ export default function Header() {
           </div>
         </details>
       </div>
+      <NotificationToast />
     </header>
   );
 }

@@ -141,3 +141,31 @@ export function advanceJob(jobId: string) {
 export function submitReview(jobId: string, rating: number, text: string) {
   getStoreAdapter().submitReview(jobId, rating, text);
 }
+
+export function customerCounterOffer(jobId: string, offerId: string, price: number) {
+  getStoreAdapter().customerCounterOffer(jobId, offerId, price);
+}
+
+export function workerRespondToCounter(
+  jobId: string,
+  offerId: string,
+  decision: "accept" | "decline",
+) {
+  getStoreAdapter().workerRespondToCounter(jobId, offerId, decision);
+}
+
+export function declineJob(jobId: string, workerId: string) {
+  getStoreAdapter().declineJob(jobId, workerId);
+}
+
+export function switchToScheduled(jobId: string, scheduledFor?: string) {
+  getStoreAdapter().switchToScheduled(jobId, scheduledFor);
+}
+
+export function dismissNotification(id: string) {
+  getStoreAdapter().dismissNotification(id);
+}
+
+export function clearNotifications() {
+  getStoreAdapter().clearNotifications();
+}

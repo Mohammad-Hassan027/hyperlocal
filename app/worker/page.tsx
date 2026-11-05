@@ -1,11 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useSyncExternalStore, useState } from "react";
 import WorkerMiniMapDynamic from "@/components/map/WorkerMiniMapDynamic";
 import { Badges, Monogram, Note, OnlineDot, StarRow, Stars, StatusTag } from "@/components/ui";
 import { etaMinutes, fmtKm, fmtWhen, haversineKm, inr } from "@/lib/geo";
 import { categoryById } from "@/lib/seed";
-import { advanceJob, setBaseRate, setMyWorker, setOnline, submitOffer, useStore } from "@/lib/store";
+import { advanceJob, declineJob, setBaseRate, setMyWorker, setOnline, submitOffer, useStore, workerRespondToCounter } from "@/lib/store";
 import type { Job, Worker } from "@/lib/types";
 
 function IncomingRequest({ job, me }: { job: Job; me: Worker }) {
@@ -46,34 +46,97 @@ function IncomingRequest({ job, me }: { job: Job; me: Worker }) {
         />
 
         {myOffer ? (
-          <p className="rounded-md bg-wall px-3 py-2.5 text-[15px]">
-            You asked for <b>{inr(myOffer.price)}</b>. Waiting for the customer to answer.
-          </p>
+          <div className="space-y-2">
+            {myOffer.customerCounterPrice !== undefined ? (
+              <div className="rounded-md border-2 border-marigold bg-marigold-soft p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-sm">Customer countered your price!</span>
+                  <span className="num text-xl font-bold">{inr(myOffer.customerCounterPrice)}</span>
+                </div>
+                <div className="text-xs space-y-1 text-muted border-t border-ink/20 pt-1.5">
+                  <div className="flex justify-between">
+                    <span>1. You asked for:</span>
+                    <span className="num">{inr(myOffer.price)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>2. Customer countered:</span>
+                    <span className="num">{inr(myOffer.customerCounterPrice)}</span>
+                  </div>
+                </div>
+
+                {myOffer.status === "declined" ? (
+                  <p className="text-xs font-semibold text-chilli pt-1">
+                    You declined this counter offer.
+                  </p>
+                ) : (
+                  <div className="flex gap-2 pt-1">
+                    <button
+                      onClick={() =>
+                        workerRespondToCounter(job.id, myOffer.id, "accept")
+                      }
+                      className="btn btn-go text-xs min-h-[38px] flex-1"
+                    >
+                      Accept {inr(myOffer.customerCounterPrice)}
+                    </button>
+                    <button
+                      onClick={() =>
+                        workerRespondToCounter(job.id, myOffer.id, "decline")
+                      }
+                      className="btn btn-line text-xs min-h-[38px] px-3 text-chilli"
+                    >
+                      Decline
+                    </button>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="flex items-center justify-between rounded-md bg-wall px-3 py-2.5 text-[15px]">
+                <span>
+                  You asked for <b>{inr(myOffer.price)}</b>. Waiting for response.
+                </span>
+                <button
+                  onClick={() => declineJob(job.id, me.id)}
+                  className="text-xs font-semibold text-chilli underline underline-offset-4 ml-2"
+                >
+                  Withdraw
+                </button>
+              </div>
+            )}
+          </div>
         ) : (
-          <div className="tear-t flex flex-wrap items-center gap-x-4 gap-y-3 pt-4">
-            <button onClick={() => submitOffer(job.id, me.id, job.budget, "accept")} className="btn btn-neel">
-              Take it for {inr(job.budget)}
-            </button>
-            <span className="text-muted">or ask for</span>
-            <div className="flex items-center gap-2">
-              <span className="num text-xl">₹</span>
-              <input
-                type="number"
-                step={10}
-                min={50}
-                value={counter}
-                onChange={(e) => setCounter(Number(e.target.value))}
-                className="field num w-28"
-                aria-label="Your price"
-              />
-              <button
-                onClick={() => submitOffer(job.id, me.id, counter, "counter")}
-                disabled={counter === job.budget || counter <= 0}
-                className="btn btn-line"
-              >
-                Send price
+          <div className="tear-t flex flex-wrap items-center justify-between gap-x-4 gap-y-3 pt-4">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
+              <button onClick={() => submitOffer(job.id, me.id, job.budget, "accept")} className="btn btn-neel">
+                Take it for {inr(job.budget)}
               </button>
+              <span className="text-muted">or ask for</span>
+              <div className="flex items-center gap-2">
+                <span className="num text-xl">₹</span>
+                <input
+                  type="number"
+                  step={10}
+                  min={50}
+                  value={counter}
+                  onChange={(e) => setCounter(Number(e.target.value))}
+                  className="field num w-28"
+                  aria-label="Your price"
+                />
+                <button
+                  onClick={() => submitOffer(job.id, me.id, counter, "counter")}
+                  disabled={counter === job.budget || counter <= 0}
+                  className="btn btn-line"
+                >
+                  Send price
+                </button>
+              </div>
             </div>
+            <button
+              type="button"
+              onClick={() => declineJob(job.id, me.id)}
+              className="btn btn-line text-chilli text-sm hover:border-chilli"
+            >
+              Decline
+            </button>
           </div>
         )}
       </div>
@@ -129,6 +192,13 @@ function ActiveJob({ job }: { job: Job }) {
   );
 }
 
+function subscribeTicker(callback: () => void) {
+  const t = setInterval(callback, 2000);
+  return () => clearInterval(t);
+}
+const getNowSnapshot = () => Date.now();
+const getServerSnapshot = () => 0;
+
 export default function WorkerPage() {
   const workers = useStore((s) => s.workers);
   const jobs = useStore((s) => s.jobs);
@@ -137,8 +207,15 @@ export default function WorkerPage() {
   const myTone = categoryById(me.categories[0]).tone;
   const where = me.loc.label ?? "your area";
 
+  const now = useSyncExternalStore(subscribeTicker, getNowSnapshot, getServerSnapshot);
+
   const incoming = jobs.filter(
-    (j) => j.status === "open" && j.broadcastTo.includes(me.id) && (me.online || j.mode === "scheduled"),
+    (j) =>
+      j.status === "open" &&
+      (now === 0 || now < (j.expiresAt ?? j.createdAt + 15 * 60 * 1000)) &&
+      !j.declinedBy?.includes(me.id) &&
+      j.broadcastTo.includes(me.id) &&
+      (me.online || j.mode === "scheduled"),
   );
   const active = jobs.filter(
     (j) => j.assignedWorkerId === me.id && (j.status === "accepted" || j.status === "in_progress"),

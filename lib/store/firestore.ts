@@ -473,4 +473,115 @@ export class FirestoreAdapter implements StoreAdapter {
     });
     await batch.commit();
   }
+
+  async customerCounterOffer(jobId: string, offerId: string, price: number): Promise<void> {
+    const { db } = getFirebase();
+    const jobRef = doc(db, "jobs", jobId);
+
+    await runTransaction(db, async (tx) => {
+      const snap = await tx.get(jobRef);
+      if (!snap.exists()) return;
+      const job = snap.data() as Job;
+      if (job.status !== "open" || job.assignedWorkerId) return;
+
+      const offer = (job.offers || []).find((o) => o.id === offerId);
+      if (!offer || offer.customerCounterPrice !== undefined) return;
+
+      const now = Date.now();
+      const thread = offer.thread ?? [{ sender: "worker" as const, price: offer.price, createdAt: offer.createdAt }];
+      const nextOffers = job.offers.map((o) =>
+        o.id === offerId
+          ? {
+              ...o,
+              customerCounterPrice: price,
+              customerCounterAt: now,
+              thread: [...thread, { sender: "customer" as const, price, createdAt: now }],
+            }
+          : o,
+      );
+
+      tx.update(jobRef, { offers: cleanUndefined(nextOffers) });
+    });
+  }
+
+  async workerRespondToCounter(
+    jobId: string,
+    offerId: string,
+    decision: "accept" | "decline",
+  ): Promise<void> {
+    const { db } = getFirebase();
+    const jobRef = doc(db, "jobs", jobId);
+
+    await runTransaction(db, async (tx) => {
+      const snap = await tx.get(jobRef);
+      if (!snap.exists()) return;
+      const job = snap.data() as Job;
+      if (job.status !== "open" || job.assignedWorkerId) return;
+
+      const offer = (job.offers || []).find((o) => o.id === offerId);
+      if (!offer || offer.customerCounterPrice === undefined) return;
+
+      const now = Date.now();
+      if (decision === "accept") {
+        const nextOffers = job.offers.map((o) => ({
+          ...o,
+          status: o.id === offerId ? ("accepted" as const) : ("rejected" as const),
+        }));
+
+        tx.update(jobRef, {
+          status: "accepted",
+          assignedWorkerId: offer.workerId,
+          finalPrice: offer.customerCounterPrice,
+          acceptedAt: now,
+          offers: cleanUndefined(nextOffers),
+        });
+      } else {
+        const nextOffers = job.offers.map((o) =>
+          o.id === offerId ? { ...o, status: "declined" as const } : o,
+        );
+        tx.update(jobRef, { offers: cleanUndefined(nextOffers) });
+      }
+    });
+  }
+
+  async declineJob(jobId: string, workerId: string): Promise<void> {
+    const { db } = getFirebase();
+    const jobRef = doc(db, "jobs", jobId);
+    const job = this.state.jobs.find((j) => j.id === jobId);
+    if (!job) return;
+
+    const declinedBy = job.declinedBy ?? [];
+    if (declinedBy.includes(workerId)) return;
+
+    await updateDoc(jobRef, { declinedBy: [...declinedBy, workerId] });
+  }
+
+  async switchToScheduled(jobId: string, scheduledFor?: string): Promise<void> {
+    const { db } = getFirebase();
+    const jobRef = doc(db, "jobs", jobId);
+    const defaultWhen =
+      scheduledFor ||
+      new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 16);
+
+    await updateDoc(jobRef, {
+      mode: "scheduled",
+      scheduledFor: defaultWhen,
+    });
+  }
+
+  dismissNotification(id: string): void {
+    this.state = {
+      ...this.state,
+      notifications: (this.state.notifications ?? []).filter((n) => n.id !== id),
+    };
+    this.emit();
+  }
+
+  clearNotifications(): void {
+    this.state = {
+      ...this.state,
+      notifications: [],
+    };
+    this.emit();
+  }
 }

@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "test:unit": "node --test tests/firestore-adapter.test.mjs",
+    "test:matching": "vitest run tests/matching.test.ts",
     "test:e2e": "node tests/multi-device-e2e.mjs"
   },
   "dependencies": {
@@ -30,6 +31,8 @@
     "eslint": "^9",
     "eslint-config-next": "16.4.3",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vite": "^8.3.6",
+    "vitest": "^5.1.0"
   }
 }

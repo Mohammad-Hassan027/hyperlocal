@@ -10,7 +10,7 @@ service cloud.firestore {
     // (Also allows cancelling open or accepted jobs)
     function isValidStatusTransition(prev, next) {
       return (prev == next) ||
-        (prev == "open" && (next == "accepted" || next == "cancelled")) ||
+        (prev == "open" && (next == "accepted" || next == "cancelled" || next == "expired")) ||
         (prev == "accepted" && (next == "in_progress" || next == "cancelled")) ||
         (prev == "in_progress" && next == "completed");
     }

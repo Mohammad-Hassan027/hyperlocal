@@ -4,9 +4,10 @@ import { useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import BookingDialog from "./BookingDialog";
 import CustomerJobCard from "./CustomerJobCard";
+import CustomerMapDynamic from "./map/CustomerMapDynamic";
 import WorkerCard from "./WorkerCard";
 import { Note } from "./ui";
-import { etaMinutes, PRESET_LOCATIONS } from "@/lib/geo";
+import { etaMinutes, haversineKm, PRESET_LOCATIONS } from "@/lib/geo";
 import { CATEGORIES, categoryById } from "@/lib/seed";
 import { nearbyWorkers, setLocation, useStore } from "@/lib/store";
 import type { CategoryId, Worker } from "@/lib/types";
@@ -25,6 +26,12 @@ export default function CustomerView() {
   const [tab, setTab] = useState<"find" | "bookings">("find");
   const [booking, setBooking] = useState<{ preferred?: Worker } | null>(null);
   const [gpsMsg, setGpsMsg] = useState("");
+  const [highlightedWorkerId, setHighlightedWorkerId] = useState<string | null>(null);
+  const [showMap, setShowMap] = useState(true);
+
+  const activeJob = state.jobs.find(
+    (j) => j.status === "accepted" && j.assignedWorkerId,
+  );
 
   const cat = categoryById(category);
   const label = cat.label.toLowerCase();
@@ -208,6 +215,38 @@ export default function CustomerView() {
             </section>
           )}
 
+          {/* Interactive Map */}
+          <section aria-label="Map of nearby workers" className="space-y-2">
+            <div className="flex items-center justify-between">
+              <h2 className="text-xl">
+                Area map • {results.length} worker{results.length === 1 ? "" : "s"}
+              </h2>
+              <button
+                type="button"
+                onClick={() => setShowMap((v) => !v)}
+                className="btn btn-line min-h-[38px] px-3 py-1 text-sm"
+              >
+                {showMap ? "Hide map" : "Show map"}
+              </button>
+            </div>
+            {showMap && (
+              <CustomerMapDynamic
+                customerLoc={state.location}
+                radiusKm={radius}
+                workers={inRange}
+                category={category}
+                selectedWorkerId={highlightedWorkerId}
+                onSelectWorker={(id) => {
+                  setHighlightedWorkerId(id);
+                  const el = document.getElementById(`worker-card-${id}`);
+                  el?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+                }}
+                activeJob={activeJob}
+                demoSpeed={state.demoSpeed ?? 20}
+              />
+            )}
+          </section>
+
           {results.length === 0 ? (
             <Note>
               <p>
@@ -235,6 +274,10 @@ export default function CustomerView() {
                   category={category}
                   distanceKm={distanceKm}
                   onBook={() => setBooking({ preferred: worker })}
+                  isHighlighted={highlightedWorkerId === worker.id}
+                  onHover={(isHovering) =>
+                    setHighlightedWorkerId(isHovering ? worker.id : null)
+                  }
                 />
               ))}
             </div>
@@ -248,10 +291,30 @@ export default function CustomerView() {
           </button>
         </Note>
       ) : (
-        <div className="grid items-start gap-6 md:grid-cols-2">
-          {state.jobs.map((j) => (
-            <CustomerJobCard key={j.id} job={j} />
-          ))}
+        <div className="space-y-6">
+          {activeJob && (
+            <section aria-label="Live tracking map" className="space-y-2">
+              <h2 className="text-xl">Worker on the way • Live tracking</h2>
+              <CustomerMapDynamic
+                customerLoc={activeJob.customerLoc}
+                radiusKm={activeJob.radiusKm}
+                workers={state.workers
+                  .filter((w) => w.id === activeJob.assignedWorkerId)
+                  .map((w) => ({
+                    worker: w,
+                    distanceKm: haversineKm(activeJob.customerLoc, w.loc),
+                  }))}
+                category={activeJob.category}
+                activeJob={activeJob}
+                demoSpeed={state.demoSpeed ?? 20}
+              />
+            </section>
+          )}
+          <div className="grid items-start gap-6 md:grid-cols-2">
+            {state.jobs.map((j) => (
+              <CustomerJobCard key={j.id} job={j} />
+            ))}
+          </div>
         </div>
       )}
 

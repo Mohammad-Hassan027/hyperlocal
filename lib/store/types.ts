@@ -23,4 +23,5 @@ export interface StoreAdapter {
   cancelJob(jobId: string): Promise<void> | void;
   advanceJob(jobId: string): Promise<void> | void;
   submitReview(jobId: string, rating: number, text: string): Promise<void> | void;
+  setDemoSpeed(speed: number): void;
 }

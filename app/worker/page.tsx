@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import WorkerMiniMapDynamic from "@/components/map/WorkerMiniMapDynamic";
 import { Badges, Monogram, Note, OnlineDot, StarRow, Stars, StatusTag } from "@/components/ui";
 import { etaMinutes, fmtKm, fmtWhen, haversineKm, inr } from "@/lib/geo";
 import { categoryById } from "@/lib/seed";
@@ -35,6 +36,14 @@ function IncomingRequest({ job, me }: { job: Job; me: Worker }) {
             <div className="mt-1 text-xs font-semibold text-muted">customer&apos;s budget</div>
           </div>
         </div>
+
+        <WorkerMiniMapDynamic
+          customerLoc={job.customerLoc}
+          workerLoc={me.loc}
+          distanceKm={dist}
+          categoryTone={cat.tone}
+          workerEmoji={me.emoji}
+        />
 
         {myOffer ? (
           <p className="rounded-md bg-wall px-3 py-2.5 text-[15px]">

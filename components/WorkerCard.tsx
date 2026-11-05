@@ -12,11 +12,15 @@ export default function WorkerCard({
   category,
   distanceKm,
   onBook,
+  isHighlighted = false,
+  onHover,
 }: {
   worker: Worker;
   category: CategoryId;
   distanceKm: number;
   onBook: () => void;
+  isHighlighted?: boolean;
+  onHover?: (hovering: boolean) => void;
 }) {
   const [open, setOpen] = useState(false);
   const reviewsId = useId();
@@ -26,7 +30,18 @@ export default function WorkerCard({
   const first = worker.name.split(" ")[0];
 
   return (
-    <article className={`flyer overflow-hidden ${worker.online ? "" : "opacity-85"}`}>
+    <article
+      id={`worker-card-${worker.id}`}
+      onMouseEnter={() => onHover?.(true)}
+      onMouseLeave={() => onHover?.(false)}
+      className={`flyer overflow-hidden transition-all duration-150 ${
+        worker.online ? "" : "opacity-85"
+      } ${
+        isHighlighted
+          ? "ring-4 ring-marigold shadow-[0_4px_16px_rgba(244,163,0,0.45)] -translate-y-1"
+          : ""
+      }`}
+    >
       <header className="flex items-center gap-3 px-4 py-3" style={{ background: tone }}>
         <Monogram name={worker.name} tone="#fffffe" />
         <div className="min-w-0 flex-1">

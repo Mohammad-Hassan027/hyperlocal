@@ -93,6 +93,10 @@ export function setBots(bots: boolean) {
   getStoreAdapter().setBots(bots);
 }
 
+export function setDemoSpeed(speed: number) {
+  getStoreAdapter().setDemoSpeed(speed);
+}
+
 export function setOnline(workerId: string, online: boolean) {
   getStoreAdapter().setOnline(workerId, online);
 }

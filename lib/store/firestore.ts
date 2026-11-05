@@ -58,6 +58,7 @@ export class FirestoreAdapter implements StoreAdapter {
     location: PRESET_LOCATIONS[0],
     myWorkerId: "w1",
     bots: true,
+    demoSpeed: 20,
   };
 
   private listeners = new Set<() => void>();
@@ -77,6 +78,8 @@ export class FirestoreAdapter implements StoreAdapter {
       if (wid) this.state.myWorkerId = wid;
       const b = localStorage.getItem("hyperlocal:bots");
       if (b !== null) this.state.bots = JSON.parse(b);
+      const sp = localStorage.getItem("hyperlocal:demo_speed");
+      if (sp !== null) this.state.demoSpeed = JSON.parse(sp);
     } catch {}
 
     const { auth, db } = getFirebase();
@@ -182,6 +185,14 @@ export class FirestoreAdapter implements StoreAdapter {
     this.state = { ...this.state, bots };
     try {
       localStorage.setItem("hyperlocal:bots", JSON.stringify(bots));
+    } catch {}
+    this.emit();
+  }
+
+  setDemoSpeed(demoSpeed: number): void {
+    this.state = { ...this.state, demoSpeed };
+    try {
+      localStorage.setItem("hyperlocal:demo_speed", JSON.stringify(demoSpeed));
     } catch {}
     this.emit();
   }

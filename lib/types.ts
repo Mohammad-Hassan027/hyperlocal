@@ -111,4 +111,6 @@ export interface AppState {
   myWorkerId: string;
   /** Simulated nearby workers auto-respond to broadcasts */
   bots: boolean;
+  /** Demo travel speed: 1 (real-time) or 20 (stage demo ~25s arrival) */
+  demoSpeed: number;
 }

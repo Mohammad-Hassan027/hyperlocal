@@ -18,6 +18,7 @@ export const SEED_STATE: AppState = {
   location: PRESET_LOCATIONS[0],
   myWorkerId: "w1",
   bots: true,
+  demoSpeed: 20,
 };
 
 const uid = () => Math.random().toString(36).slice(2, 9);
@@ -96,6 +97,10 @@ export class LocalStorageAdapter implements StoreAdapter {
 
   setBots(bots: boolean): void {
     this.set({ ...this.state, bots });
+  }
+
+  setDemoSpeed(demoSpeed: number): void {
+    this.set({ ...this.state, demoSpeed });
   }
 
   setOnline(workerId: string, online: boolean): void {

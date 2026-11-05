@@ -9,6 +9,7 @@ import { Badges, Monogram, Star, StatusTag, Stars } from "./ui";
 
 export default function CustomerJobCard({ job }: { job: Job }) {
   const workers = useStore((s) => s.workers);
+  const demoSpeed = useStore((s) => s.demoSpeed ?? 20);
   const cat = categoryById(job.category);
   const assigned = workers.find((w) => w.id === job.assignedWorkerId);
   const [newBudget, setNewBudget] = useState(job.budget);
@@ -17,11 +18,22 @@ export default function CustomerJobCard({ job }: { job: Job }) {
 
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
-    if (job.status !== "open") return;
+    if (job.status !== "open" && job.status !== "accepted") return;
     const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
   }, [job.status]);
   const waited = Math.max(0, Math.floor((now - job.createdAt) / 1000));
+
+  // Compute live ETA derived strictly from acceptedAt
+  const totalTripSec = 500 / demoSpeed;
+  const elapsedTripSec = Math.max(0, (now - (job.acceptedAt ?? job.createdAt)) / 1000);
+  const remainingTripSec = Math.max(0, Math.round(totalTripSec - elapsedTripSec));
+  const etaDisplay =
+    remainingTripSec === 0
+      ? "At your door!"
+      : remainingTripSec < 60
+        ? `Arriving in ~${remainingTripSec} s`
+        : `On the way, about ${Math.ceil(remainingTripSec / 60)} min away`;
 
   const offers = job.offers.filter((o) => o.status === "pending").sort((a, b) => a.price - b.price);
   const active = job.status === "open" || job.status === "accepted";
@@ -135,10 +147,15 @@ export default function CustomerJobCard({ job }: { job: Job }) {
               <p className="flex flex-wrap items-center gap-x-3 font-bold">
                 {assigned.name} <Stars value={assigned.rating} />
               </p>
-              <p className="text-[15px]">
-                {job.status === "accepted"
-                  ? `On the way, about ${etaMinutes(haversineKm(job.customerLoc, assigned.loc))} min away`
-                  : "Working on it now"}
+              <p className="text-[15px] font-semibold">
+                {job.status === "accepted" ? (
+                  <span className="flex items-center gap-1.5 text-ink">
+                    <span className="inline-block size-2 animate-ping rounded-full bg-marigold" />
+                    {etaDisplay}
+                  </span>
+                ) : (
+                  "Working on it now"
+                )}
               </p>
               <div className="mt-1">
                 <Badges badges={assigned.badges} />

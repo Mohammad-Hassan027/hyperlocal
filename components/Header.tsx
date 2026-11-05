@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { resetDemo, setBots, useStore } from "@/lib/store";
+import { resetDemo, setBots, setDemoSpeed, useStore } from "@/lib/store";
 
 export default function Header() {
   const pathname = usePathname();
   const bots = useStore((s) => s.bots);
+  const demoSpeed = useStore((s) => s.demoSpeed ?? 20);
 
   const tab = (href: string, label: string) => {
     const active = pathname.startsWith(href);
@@ -52,6 +53,36 @@ export default function Header() {
                 <span className="block text-muted">They reply to requests after a few seconds.</span>
               </span>
             </label>
+            <div className="tear-t mt-3 pt-3">
+              <span className="block text-xs font-semibold uppercase tracking-wider text-muted">
+                Demo travel speed
+              </span>
+              <div className="mt-1.5 flex gap-1.5" role="group" aria-label="Demo travel speed">
+                <button
+                  type="button"
+                  onClick={() => setDemoSpeed(1)}
+                  aria-pressed={demoSpeed === 1}
+                  className={`btn flex-1 px-2 py-1 text-xs ${
+                    demoSpeed === 1 ? "btn-neel" : "btn-line"
+                  }`}
+                >
+                  1× Normal
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDemoSpeed(20)}
+                  aria-pressed={demoSpeed === 20}
+                  className={`btn flex-1 px-2 py-1 text-xs ${
+                    demoSpeed === 20 ? "btn-go" : "btn-line"
+                  }`}
+                >
+                  20× Demo (25 s)
+                </button>
+              </div>
+              <p className="mt-1 text-[13px] text-muted leading-tight">
+                20× makes the worker arrive in ~25 s on stage.
+              </p>
+            </div>
             <button
               onClick={() => {
                 if (confirm("Reset all demo data?")) resetDemo();

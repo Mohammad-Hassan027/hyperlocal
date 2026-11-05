@@ -45,7 +45,11 @@ export class LocalStorageAdapter implements StoreAdapter {
     this.hydrated = true;
     try {
       const raw = localStorage.getItem(KEY);
-      if (raw) this.state = JSON.parse(raw) as AppState;
+      if (raw) {
+        this.state = JSON.parse(raw) as AppState;
+      } else {
+        localStorage.setItem(KEY, JSON.stringify(this.state));
+      }
     } catch {}
 
     window.addEventListener("storage", (e) => {

@@ -1,0 +1,39 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Status order validation: open -> accepted -> in_progress -> completed
+    // (Also allows cancelling open or accepted jobs)
+    function isValidStatusTransition(prev, next) {
+      return (prev == next) ||
+        (prev == "open" && (next == "accepted" || next == "cancelled")) ||
+        (prev == "accepted" && (next == "in_progress" || next == "cancelled")) ||
+        (prev == "in_progress" && next == "completed");
+    }
+
+    // Immutability: once set in resource.data, the field cannot be changed
+    function isImmutableFieldUnchanged(field) {
+      return !(field in resource.data) ||
+        (field in request.resource.data && request.resource.data[field] == resource.data[field]);
+    }
+
+    match /workers/{workerId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated();
+    }
+
+    match /jobs/{jobId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && request.resource.data.status == "open";
+      allow update: if isAuthenticated() &&
+        isValidStatusTransition(resource.data.status, request.resource.data.status) &&
+        isImmutableFieldUnchanged("assignedWorkerId") &&
+        isImmutableFieldUnchanged("finalPrice");
+      allow delete: if isAuthenticated();
+    }
+  }
+}

@@ -1,58 +1,99 @@
 # QuickKaam — Hyperlocal On-Demand Blue-Collar Services (MVP)
 
-Next.js 16 (App Router) · React 19 · Tailwind CSS 4 · TypeScript. No backend or API keys needed.
+Next.js 16 (App Router) · React 19 · Tailwind CSS 4 · TypeScript · Firebase Modular SDK / LocalStorage Fallback.
 
 ```bash
 npm install
 npm run dev   # http://localhost:3000
 ```
 
-## Demo script (2 min)
+## Architecture: Dual StoreAdapter
 
-1. **Two tabs.** Open `/customer` in one, `/worker` in the other (they sync live via `localStorage`).
-2. **Customer:** pick *Plumber* → see nearby workers sorted by distance, with ratings, badges, ETA → **Broadcast to all nearby** → set a budget (e.g. ₹250) → send.
-3. **Worker** (acting as Ramesh Yadav): request appears with distance + budget → **Counter-offer** ₹380, or **Accept** at budget for an instant match.
-4. **Customer → My bookings:** counter-offers from workers (including simulated ones) stream in → **Accept** one, or raise your budget.
-5. **Worker:** Start job → Mark completed. **Customer:** leave a review → worker rating updates.
+QuickKaam uses a unified `StoreAdapter` interface (`lib/store/types.ts`) with two interchangeable implementations:
 
-Toggle *Simulate nearby workers* in the header to turn bot responses off (only real tabs respond).
+1. **`FirestoreAdapter` (`lib/store/firestore.ts`)**:
+   - Uses the latest Firebase modular SDK (v11+).
+   - Real-time multi-device sync via Firestore `onSnapshot` listeners on `workers/{id}` and `jobs/{id}`.
+   - Anonymous Authentication via `signInAnonymously(auth)`.
+   - Concurrency safety: `submitOffer(..., "accept")` and `acceptOffer` run in a Firestore `runTransaction` so only the first accept wins and a job is never assigned twice.
+   - Client-side bot responses run only in the client that created the job and are idempotent.
+   - Activated automatically whenever `NEXT_PUBLIC_FIREBASE_*` environment variables are present.
 
-## How it maps to the requirements
+2. **`LocalStorageAdapter` (`lib/store/local.ts`)**:
+   - Zero-configuration local fallback when Firebase environment variables are missing.
+   - Synchronizes across tabs on the same device via standard browser `storage` events.
 
-| Requirement | Where |
-|---|---|
-| Dual-sided role switch | `components/Header.tsx`, `app/customer`, `app/worker` |
-| Hyperlocal filtering | `lib/geo.ts` (haversine, ETA), `nearbyWorkers()` in `lib/store.ts` |
-| Broadcast matching | `createJob()` notifies online, in-category, in-radius workers (scheduled jobs notify all in range) |
-| Flexible pricing | Customer budget + fair-range hint → worker **Accept at budget** (instant match) or **Counter** → customer picks / raises budget |
-| Trust & safety (mock) | `Badges` (ID Verified, Background Checked, Skill Certified, Top Rated), rating + review snippets |
-| ~30 min window | ETA pill turns green when worker is ≤ 30 min away |
+All hook and action signatures in `lib/store.ts` (`useStore`, `createJob`, `submitOffer`, `acceptOffer`, `updateBudget`, `cancelJob`, `advanceJob`, `submitReview`, `setOnline`, `setBaseRate`, `resetDemo`) remain identical across both adapters.
 
-## Project layout
+---
 
+## Firebase Setup Steps
+
+To connect QuickKaam to Firebase so customers on one device and workers on another see each other live:
+
+### 1. Create a Firebase Project
+1. Open the [Firebase Console](https://console.firebase.google.com/) and click **Add Project**.
+2. Name your project (e.g. `quickkaam-demo`).
+
+### 2. Enable Anonymous Authentication
+1. In the left navigation, open **Build → Authentication**.
+2. Click **Get Started**, choose the **Sign-in method** tab.
+3. Enable **Anonymous** auth and click **Save**.
+
+### 3. Create Cloud Firestore Database
+1. In the left navigation, open **Build → Firestore Database**.
+2. Click **Create database**, choose a location (e.g., `asia-south1` for Mumbai).
+3. Start in **Production mode** (we deploy custom rules in the next step).
+
+### 4. Deploy Firestore Security Rules
+Deploy `firestore.rules` using the Firebase CLI or paste the contents into the Firestore Rules editor in the console:
+```bash
+firebase deploy --only firestore:rules
 ```
-app/            routes (/, /customer, /worker)
-components/     Header, WorkerCard, BookingDialog, CustomerJobCard, ui
-lib/types.ts    domain types
-lib/seed.ts     categories + 18 seeded workers (Thane / Bhiwandi / Kalyan)
-lib/geo.ts      haversine, ETA, INR formatting, preset locations
-lib/store.ts    state + actions (matching, offers, job lifecycle, bots)
+The rules in `firestore.rules`:
+- Require authentication (`request.auth != null`).
+- Validate the job status transition order (`open` → `accepted` → `in_progress` → `completed`, or `open`/`accepted` → `cancelled`).
+- Guarantee `assignedWorkerId` and `finalPrice` are immutable once set.
+
+### 5. Configure Environment Variables
+Copy `.env.example` to `.env.local`:
+```bash
+cp .env.example .env.local
+```
+Fill in the values from your Firebase Project Settings (**Project Settings → General → Your apps → Web app (`</>`)**):
+```env
+NEXT_PUBLIC_FIREBASE_API_KEY=your_api_key
+NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=your_project.firebaseapp.com
+NEXT_PUBLIC_FIREBASE_PROJECT_ID=your_project_id
+NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=your_project.firebasestorage.app
+NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=your_sender_id
+NEXT_PUBLIC_FIREBASE_APP_ID=your_app_id
 ```
 
-## Upgrading to Firebase (real-time, multi-device)
+Restart the dev server (`npm run dev`). The app will automatically connect to Firebase!
 
-`lib/store.ts` is the only persistence layer. Keep the exported action signatures and swap internals:
+---
 
-- `workers`, `jobs` → Firestore collections `workers/{id}`, `jobs/{id}` (offers as a subcollection or array).
-- `subscribe()` → `onSnapshot()` listeners; `set()` → `setDoc` / `updateDoc` / `runTransaction`.
-- Use a **transaction** in `submitOffer(..., "accept")` so only the first worker wins.
-- Add Firebase Auth (phone OTP) with a `role: "customer" | "worker"` claim, and `geofire-common` geohashes for server-side radius queries.
-- Broadcast notifications: Cloud Function on `jobs` create → FCM push to workers whose geohash is in range.
+## Demo Script (2 min)
 
-## Notes
+1. **Two devices / browser windows:** Open `/customer` on one device, `/worker` on the other.
+2. **Customer:** Pick *Plumber* → see nearby workers sorted by distance → **Broadcast to all nearby** → set a budget (e.g. ₹250) → send request.
+3. **Worker:** The request appears live in real time. **Counter-offer** with your own price, or **Take it** for an instant match.
+4. **Customer:** Counter-offers stream in live. Click **Accept**, or raise your budget.
+5. **Worker:** Start the job → Mark as done.
+6. **Customer:** Leave a star rating and review. Worker rating updates live.
 
-- Currency is INR; swap `inr()` in `lib/geo.ts` for other locales.
-- Fonts (Yatra One for headings and prices, Mukta for text) are self-hosted via `@fontsource`, so the build works offline.
-- Design: neighbourhood notice-board theme. Each worker is a flyer; paper colour = trade (`tone` in `lib/seed.ts`); tokens live in `app/globals.css`.
-- Demo data is versioned (`hyperlocal:v2` in `lib/store.ts`); bump it when you change the seed so old browser data doesn't mask it.
-- Bot timers live in the tab that created the job; reloading mid-broadcast cancels pending bot replies.
+Use **Reset demo data** in the header to delete all jobs and reseed workers behind a confirmation prompt.
+
+---
+
+## Multi-Device Verification with Playwright
+
+To run automated end-to-end multi-device testing with isolated Playwright browser contexts:
+```bash
+npm run test:e2e
+```
+This tests:
+1. Job broadcast from customer context appearing live in the worker context.
+2. Counter-offer from worker context appearing live in the customer context.
+3. Simultaneous acceptance test: two worker contexts attempting to accept the same job at the same time, verifying that `runTransaction` ensures exactly one winner and the job is never double-assigned.

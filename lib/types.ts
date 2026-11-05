@@ -92,6 +92,17 @@ export interface Job {
   review?: { rating: number; text: string };
 }
 
+export interface CreateJobInput {
+  category: CategoryId;
+  description: string;
+  mode: JobMode;
+  scheduledFor?: string;
+  budget: number;
+  radiusKm: number;
+  /** Book a specific worker instead of broadcasting to everyone nearby */
+  preferredWorkerId?: string;
+}
+
 export interface AppState {
   workers: Worker[];
   jobs: Job[];

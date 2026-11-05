@@ -1,6 +1,5 @@
 import { describe, it } from "node:test";
 import assert from "node:assert";
-import type { Job, Offer } from "../lib/types";
 
 /**
  * Concurrency test for Firestore runTransaction semantics:
@@ -10,7 +9,7 @@ import type { Job, Offer } from "../lib/types";
 describe("Firestore Transaction Concurrency & Status Order", () => {
   it("simultaneous accepts leave exactly one winner using transaction semantics", async () => {
     // Shared in-memory document state simulating Firestore document
-    let jobData: Job = {
+    let jobData = {
       id: "job-101",
       category: "plumber",
       description: "Leaking pipe in bathroom",
@@ -27,16 +26,11 @@ describe("Firestore Transaction Concurrency & Status Order", () => {
     // Simulated mutex/version lock for Firestore document
     let version = 1;
 
-    async function runSimulatedTransaction<T>(
-      updateFn: (tx: {
-        get: () => Promise<{ exists: boolean; data: () => Job; version: number }>;
-        update: (data: Partial<Job>) => void;
-      }) => Promise<T>,
-    ): Promise<T> {
+    async function runSimulatedTransaction(updateFn) {
       // Max retry loop as in Firestore SDK
       for (let attempt = 0; attempt < 5; attempt++) {
         const readVersion = version;
-        let pendingUpdate: Partial<Job> | null = null;
+        let pendingUpdate = null;
 
         const tx = {
           get: async () => ({
@@ -44,7 +38,7 @@ describe("Firestore Transaction Concurrency & Status Order", () => {
             data: () => ({ ...jobData }),
             version: readVersion,
           }),
-          update: (data: Partial<Job>) => {
+          update: (data) => {
             pendingUpdate = data;
           },
         };
@@ -54,7 +48,7 @@ describe("Firestore Transaction Concurrency & Status Order", () => {
         // Atomic commit check
         if (version === readVersion) {
           if (pendingUpdate) {
-            jobData = { ...jobData, ...(pendingUpdate as Partial<Job>) };
+            jobData = { ...jobData, ...pendingUpdate };
             version++;
           }
           return result;
@@ -66,7 +60,7 @@ describe("Firestore Transaction Concurrency & Status Order", () => {
     }
 
     // Worker accept function using transaction
-    async function acceptJobTransaction(workerId: string, price: number): Promise<boolean> {
+    async function acceptJobTransaction(workerId, price) {
       return runSimulatedTransaction(async (tx) => {
         const snap = await tx.get();
         const job = snap.data();
@@ -76,7 +70,7 @@ describe("Firestore Transaction Concurrency & Status Order", () => {
         }
 
         const now = Date.now();
-        const offer: Offer = {
+        const offer = {
           id: `offer-${workerId}`,
           workerId,
           price,
@@ -123,7 +117,7 @@ describe("Firestore Transaction Concurrency & Status Order", () => {
   });
 
   it("validates status transitions: open -> accepted -> in_progress -> completed", () => {
-    function isValidStatusTransition(prev: string, next: string): boolean {
+    function isValidStatusTransition(prev, next) {
       return (
         prev === next ||
         (prev === "open" && (next === "accepted" || next === "cancelled")) ||

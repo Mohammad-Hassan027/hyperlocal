@@ -7,7 +7,7 @@
     "build": "next build --webpack",
     "start": "next start",
     "lint": "eslint",
-    "test:unit": "node --test tests/firestore-adapter.test.ts",
+    "test:unit": "node --test tests/firestore-adapter.test.mjs",
     "test:e2e": "node tests/multi-device-e2e.mjs"
   },
   "dependencies": {

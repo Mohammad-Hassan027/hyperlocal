@@ -8,7 +8,7 @@ import type { AppNotification } from "@/lib/types";
 const EMPTY_NOTIFICATIONS: AppNotification[] = [];
 
 export default function NotificationToast() {
-  const notifications = useStore((s) => s.notifications) || EMPTY_NOTIFICATIONS;
+  const notifications = useStore((s) => s.notifications ?? EMPTY_NOTIFICATIONS);
   const [browserPermission, setBrowserPermission] = useState<NotificationPermission>(() =>
     typeof window !== "undefined" && "Notification" in window
       ? Notification.permission

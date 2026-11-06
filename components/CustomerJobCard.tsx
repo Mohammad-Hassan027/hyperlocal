@@ -19,9 +19,11 @@ import {
 import type { Job } from "@/lib/types";
 import { Badges, Monogram, Star, StatusTag, Stars } from "./ui";
 
+const EMPTY_BLOCKED: string[] = [];
+
 export default function CustomerJobCard({ job }: { job: Job }) {
   const workers = useStore((s) => s.workers);
-  const blockedWorkers = useStore((s) => s.blockedWorkers ?? []);
+  const blockedWorkers = useStore((s) => s.blockedWorkers) ?? EMPTY_BLOCKED;
   const demoSpeed = useStore((s) => s.demoSpeed ?? 20);
   const cat = categoryById(job.category);
   const assigned = workers.find((w) => w.id === job.assignedWorkerId);

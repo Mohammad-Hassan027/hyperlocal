@@ -1,6 +1,6 @@
 "use client";
 
-import { useSyncExternalStore } from "react";
+import { useRef, useSyncExternalStore } from "react";
 import { isFirebaseConfigured } from "./firebase";
 import { haversineKm } from "./geo";
 import { FirestoreAdapter } from "./store/firestore";
@@ -50,11 +50,27 @@ export function setStoreAdapter(customAdapter: StoreAdapter | undefined) {
 
 export function useStore<T>(selector: (s: AppState) => T): T {
   const adapter = getStoreAdapter();
-  return useSyncExternalStore(
-    (cb) => adapter.subscribe(cb),
-    () => selector(adapter.getState()),
-    () => selector(SEED_STATE),
-  );
+  // Memoize the last (state, result) pair so getSnapshot always returns the
+  // same reference when the underlying state object hasn't changed.
+  // This prevents React error #185, which fires when useSyncExternalStore's
+  // getSnapshot returns a new (non-===) value on consecutive calls without a
+  // real store mutation (e.g. derived arrays created by `?? []` or `.filter()`).
+  const cache = useRef<{ state: AppState; value: T } | null>(null);
+
+  const getSnapshot = () => {
+    const s = adapter.getState();
+    if (cache.current !== null && cache.current.state === s) {
+      return cache.current.value;
+    }
+    const value = selector(s);
+    cache.current = { state: s, value };
+    return value;
+  };
+
+  // Server snapshot: run selector against seed state (no caching needed here).
+  const getServerSnapshot = () => selector(SEED_STATE);
+
+  return useSyncExternalStore(adapter.subscribe.bind(adapter), getSnapshot, getServerSnapshot);
 }
 
 export const getState = () => getStoreAdapter().getState();

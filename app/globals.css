@@ -141,6 +141,18 @@ h3 {
   .btn-line:hover:not(:disabled) {
     background: rgb(15 26 77 / 0.07);
   }
+  .btn-chilli {
+    background: var(--color-chilli);
+    color: #fff;
+    box-shadow: 0 3px 0 var(--color-ink);
+  }
+  .btn-chilli:hover:not(:disabled) {
+    background: #d13e28;
+  }
+  .btn-chilli:active:not(:disabled) {
+    transform: translateY(2px);
+    box-shadow: 0 1px 0 var(--color-ink);
+  }
 
   .field {
     width: 100%;

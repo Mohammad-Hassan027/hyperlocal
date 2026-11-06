@@ -36,6 +36,9 @@ export function getStoreAdapter(): StoreAdapter {
     }
     adapter.init();
     adapterInstance = adapter;
+    if (customWindow) {
+      customWindow.__STORE_ADAPTER__ = adapter;
+    }
   }
   return adapterInstance;
 }
@@ -48,29 +51,61 @@ export function setStoreAdapter(customAdapter: StoreAdapter | undefined) {
   }
 }
 
+function shallowEqual(a: unknown, b: unknown): boolean {
+  if (Object.is(a, b)) return true;
+  if (typeof a !== "object" || a === null || typeof b !== "object" || b === null) {
+    return false;
+  }
+  if (Array.isArray(a) && Array.isArray(b)) {
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) {
+      if (!Object.is(a[i], b[i])) return false;
+    }
+    return true;
+  }
+  const keysA = Object.keys(a as Record<string, unknown>);
+  const keysB = Object.keys(b as Record<string, unknown>);
+  if (keysA.length !== keysB.length) return false;
+  for (const k of keysA) {
+    if (
+      !Object.prototype.hasOwnProperty.call(b, k) ||
+      !Object.is((a as Record<string, unknown>)[k], (b as Record<string, unknown>)[k])
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
 export function useStore<T>(selector: (s: AppState) => T): T {
   const adapter = getStoreAdapter();
   // Memoize the last (state, result) pair so getSnapshot always returns the
   // same reference when the underlying state object hasn't changed.
-  // This prevents React error #185, which fires when useSyncExternalStore's
-  // getSnapshot returns a new (non-===) value on consecutive calls without a
-  // real store mutation (e.g. derived arrays created by `?? []` or `.filter()`).
+  // Also perform a shallow-equality check so that derived arrays/objects
+  // (e.g. `s.blockedWorkers ?? []` or `.filter()`) preserve reference identity
+  // across unrelated state updates. This permanently eliminates React error #185.
   const cache = useRef<{ state: AppState; value: T } | null>(null);
+
+  const subscribe = useRef((onStoreChange: () => void) => adapter.subscribe(onStoreChange)).current;
 
   const getSnapshot = () => {
     const s = adapter.getState();
     if (cache.current !== null && cache.current.state === s) {
       return cache.current.value;
     }
-    const value = selector(s);
-    cache.current = { state: s, value };
-    return value;
+    const nextValue = selector(s);
+    if (cache.current !== null && shallowEqual(cache.current.value, nextValue)) {
+      cache.current.state = s;
+      return cache.current.value;
+    }
+    cache.current = { state: s, value: nextValue };
+    return nextValue;
   };
 
   // Server snapshot: run selector against seed state (no caching needed here).
   const getServerSnapshot = () => selector(SEED_STATE);
 
-  return useSyncExternalStore(adapter.subscribe.bind(adapter), getSnapshot, getServerSnapshot);
+  return useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
 }
 
 export const getState = () => getStoreAdapter().getState();

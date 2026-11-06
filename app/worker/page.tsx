@@ -1,6 +1,6 @@
 "use client";
 
-import { useSyncExternalStore, useState } from "react";
+import { useEffect, useState } from "react";
 import WorkerMiniMapDynamic from "@/components/map/WorkerMiniMapDynamic";
 import { Badges, Monogram, Note, OnlineDot, StarRow, Stars, StatusTag } from "@/components/ui";
 import { etaMinutes, fmtKm, fmtWhen, haversineKm, inr, maskPhone } from "@/lib/geo";
@@ -264,23 +264,6 @@ function ActiveJob({ job }: { job: Job }) {
   );
 }
 
-// Module-level cache so getNowSnapshot returns a stable value between ticks.
-// useSyncExternalStore requires getSnapshot to be referentially stable until
-// the subscriber fires — calling Date.now() directly would return a new value
-// every millisecond and trigger React error #185.
-let _cachedNow = 0; // 0 = server/prerender; set on first client subscribe
-function subscribeTicker(callback: () => void) {
-  // Seed immediately so the first render after hydration has a real value.
-  if (_cachedNow === 0) _cachedNow = Date.now();
-  const t = setInterval(() => {
-    _cachedNow = Date.now();
-    callback();
-  }, 2000);
-  return () => clearInterval(t);
-}
-const getNowSnapshot = () => _cachedNow;
-const getServerSnapshot = () => 0;
-
 export default function WorkerPage() {
   const workers = useStore((s) => s.workers);
   const jobs = useStore((s) => s.jobs);
@@ -289,7 +272,12 @@ export default function WorkerPage() {
   const myTone = categoryById(me.categories[0]).tone;
   const where = me.loc.label ?? "your area";
 
-  const now = useSyncExternalStore(subscribeTicker, getNowSnapshot, getServerSnapshot);
+  const [now, setNow] = useState(0);
+  useEffect(() => {
+    setNow(Date.now());
+    const t = setInterval(() => setNow(Date.now()), 2000);
+    return () => clearInterval(t);
+  }, []);
 
   const incoming = jobs.filter(
     (j) =>

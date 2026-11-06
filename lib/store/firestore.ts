@@ -23,6 +23,7 @@ import type {
   Worker,
 } from "../types";
 import type { StoreAdapter } from "./types";
+import { LocalStorageAdapter } from "./local";
 
 const uid = () => Math.random().toString(36).slice(2, 9);
 const round10 = (n: number) => Math.max(10, Math.round(n / 10) * 10);
@@ -54,7 +55,48 @@ function cleanUndefined<T>(obj: T): T {
   return result as T;
 }
 
+
+let _isFirestoreFallenBack = false;
+const _fallbackListeners = new Set<(fallback: boolean) => void>();
+
+export function isFirestoreFallenBack(): boolean {
+  return _isFirestoreFallenBack;
+}
+
+export function subscribeFirestoreFallback(cb: (fallback: boolean) => void): () => void {
+  _fallbackListeners.add(cb);
+  cb(_isFirestoreFallenBack);
+  return () => {
+    _fallbackListeners.delete(cb);
+  };
+}
+
+function notifyFallback(fallback: boolean) {
+  _isFirestoreFallenBack = fallback;
+  _fallbackListeners.forEach((l) => l(fallback));
+}
+
 export class FirestoreAdapter implements StoreAdapter {
+  private fallbackAdapter = new LocalStorageAdapter();
+  public isFallenBack = false;
+
+  private fallbackToLocal(reason?: unknown) {
+    if (this.isFallenBack) return;
+    this.isFallenBack = true;
+    console.warn("Firestore unavailable; falling back to LocalStorageAdapter:", reason);
+    this.unsubscribers.forEach((u) => {
+      try { u(); } catch {}
+    });
+    this.unsubscribers = [];
+    this.fallbackAdapter.init();
+    this.fallbackAdapter.subscribe(() => {
+      this.state = this.fallbackAdapter.getState();
+      this.emit();
+    });
+    this.state = this.fallbackAdapter.getState();
+    this.emit();
+    notifyFallback(true);
+  }
   private state: AppState = {
     workers: SEED_WORKERS,
     jobs: [],
@@ -89,7 +131,7 @@ export class FirestoreAdapter implements StoreAdapter {
     const { auth, db } = getFirebase();
 
     // Ensure anonymous authentication
-    ensureAnonymousAuth(auth).catch(() => {});
+    ensureAnonymousAuth(auth).catch((err) => { this.fallbackToLocal(err); });
 
     // Listen to workers collection
     const unsubWorkers = onSnapshot(
@@ -111,7 +153,8 @@ export class FirestoreAdapter implements StoreAdapter {
         }
       },
       (err) => {
-        console.error("Firestore workers snapshot error:", err);
+        console.warn("Firestore workers snapshot error:", err);
+        this.fallbackToLocal(err);
       },
     );
     this.unsubscribers.push(unsubWorkers);
@@ -130,7 +173,8 @@ export class FirestoreAdapter implements StoreAdapter {
         this.emit();
       },
       (err) => {
-        console.error("Firestore jobs snapshot error:", err);
+        console.warn("Firestore jobs snapshot error:", err);
+        this.fallbackToLocal(err);
       },
     );
     this.unsubscribers.push(unsubJobs);
@@ -162,6 +206,7 @@ export class FirestoreAdapter implements StoreAdapter {
   }
 
   getState(): AppState {
+    if (this.isFallenBack) return this.fallbackAdapter.getState();
     return this.state;
   }
 
@@ -170,6 +215,7 @@ export class FirestoreAdapter implements StoreAdapter {
   }
 
   setLocation(location: LatLng): void {
+    if (this.isFallenBack) return this.fallbackAdapter.setLocation(location);
     this.state = { ...this.state, location };
     try {
       localStorage.setItem("hyperlocal:client_location", JSON.stringify(location));
@@ -178,6 +224,7 @@ export class FirestoreAdapter implements StoreAdapter {
   }
 
   setMyWorker(myWorkerId: string): void {
+    if (this.isFallenBack) return this.fallbackAdapter.setMyWorker(myWorkerId);
     this.state = { ...this.state, myWorkerId };
     try {
       localStorage.setItem("hyperlocal:my_worker_id", myWorkerId);
@@ -186,6 +233,7 @@ export class FirestoreAdapter implements StoreAdapter {
   }
 
   setBots(bots: boolean): void {
+    if (this.isFallenBack) return this.fallbackAdapter.setBots(bots);
     this.state = { ...this.state, bots };
     try {
       localStorage.setItem("hyperlocal:bots", JSON.stringify(bots));
@@ -194,6 +242,7 @@ export class FirestoreAdapter implements StoreAdapter {
   }
 
   setDemoSpeed(demoSpeed: number): void {
+    if (this.isFallenBack) return this.fallbackAdapter.setDemoSpeed(demoSpeed);
     this.state = { ...this.state, demoSpeed };
     try {
       localStorage.setItem("hyperlocal:demo_speed", JSON.stringify(demoSpeed));
@@ -202,16 +251,19 @@ export class FirestoreAdapter implements StoreAdapter {
   }
 
   async setOnline(workerId: string, online: boolean): Promise<void> {
+    if (this.isFallenBack) return this.fallbackAdapter.setOnline(workerId, online);
     const { db } = getFirebase();
     await updateDoc(doc(db, "workers", workerId), { online });
   }
 
   async setBaseRate(workerId: string, baseRate: number): Promise<void> {
+    if (this.isFallenBack) return this.fallbackAdapter.setBaseRate(workerId, baseRate);
     const { db } = getFirebase();
     await updateDoc(doc(db, "workers", workerId), { baseRate });
   }
 
   async resetDemo(): Promise<void> {
+    if (this.isFallenBack) return this.fallbackAdapter.resetDemo();
     const { db } = getFirebase();
     // 1. Delete all jobs
     const jobsSnap = await getDocs(collection(db, "jobs"));
@@ -231,6 +283,7 @@ export class FirestoreAdapter implements StoreAdapter {
   }
 
   createJob(input: CreateJobInput): string {
+    if (this.isFallenBack) return this.fallbackAdapter.createJob(input);
     const id = uid();
     const customerLoc = this.state.location;
 
@@ -306,6 +359,7 @@ export class FirestoreAdapter implements StoreAdapter {
     price: number,
     kind: Offer["kind"],
   ): Promise<void> {
+    if (this.isFallenBack) return this.fallbackAdapter.submitOffer(jobId, workerId, price, kind);
     const { db } = getFirebase();
     const jobRef = doc(db, "jobs", jobId);
 
@@ -372,6 +426,7 @@ export class FirestoreAdapter implements StoreAdapter {
   }
 
   async acceptOffer(jobId: string, offerId: string): Promise<void> {
+    if (this.isFallenBack) return this.fallbackAdapter.acceptOffer(jobId, offerId);
     const { db } = getFirebase();
     const jobRef = doc(db, "jobs", jobId);
 
@@ -406,6 +461,7 @@ export class FirestoreAdapter implements StoreAdapter {
   }
 
   async updateBudget(jobId: string, budget: number): Promise<void> {
+    if (this.isFallenBack) return this.fallbackAdapter.updateBudget(jobId, budget);
     const { db } = getFirebase();
     const jobRef = doc(db, "jobs", jobId);
     const job = this.state.jobs.find((j) => j.id === jobId);
@@ -425,6 +481,7 @@ export class FirestoreAdapter implements StoreAdapter {
   }
 
   async cancelJob(jobId: string): Promise<void> {
+    if (this.isFallenBack) return this.fallbackAdapter.cancelJob(jobId);
     const job = this.state.jobs.find((j) => j.id === jobId);
     if (!job || (job.status !== "open" && job.status !== "accepted")) return;
 
@@ -433,6 +490,7 @@ export class FirestoreAdapter implements StoreAdapter {
   }
 
   async advanceJob(jobId: string): Promise<void> {
+    if (this.isFallenBack) return this.fallbackAdapter.advanceJob(jobId);
     const job = this.state.jobs.find((j) => j.id === jobId);
     if (!job) return;
 
@@ -453,6 +511,7 @@ export class FirestoreAdapter implements StoreAdapter {
   }
 
   async submitReview(jobId: string, rating: number, text: string): Promise<void> {
+    if (this.isFallenBack) return this.fallbackAdapter.submitReview(jobId, rating, text);
     const job = this.state.jobs.find((j) => j.id === jobId);
     if (!job || job.status !== "completed" || job.review || !job.assignedWorkerId)
       return;
@@ -485,6 +544,7 @@ export class FirestoreAdapter implements StoreAdapter {
   }
 
   async customerCounterOffer(jobId: string, offerId: string, price: number): Promise<void> {
+    if (this.isFallenBack) return this.fallbackAdapter.customerCounterOffer(jobId, offerId, price);
     const { db } = getFirebase();
     const jobRef = doc(db, "jobs", jobId);
 
@@ -519,6 +579,7 @@ export class FirestoreAdapter implements StoreAdapter {
     offerId: string,
     decision: "accept" | "decline",
   ): Promise<void> {
+    if (this.isFallenBack) return this.fallbackAdapter.workerRespondToCounter(jobId, offerId, decision);
     const { db } = getFirebase();
     const jobRef = doc(db, "jobs", jobId);
 
@@ -555,6 +616,7 @@ export class FirestoreAdapter implements StoreAdapter {
   }
 
   async declineJob(jobId: string, workerId: string): Promise<void> {
+    if (this.isFallenBack) return this.fallbackAdapter.declineJob(jobId, workerId);
     const { db } = getFirebase();
     const jobRef = doc(db, "jobs", jobId);
     const job = this.state.jobs.find((j) => j.id === jobId);
@@ -567,6 +629,7 @@ export class FirestoreAdapter implements StoreAdapter {
   }
 
   async switchToScheduled(jobId: string, scheduledFor?: string): Promise<void> {
+    if (this.isFallenBack) return this.fallbackAdapter.switchToScheduled(jobId, scheduledFor);
     const { db } = getFirebase();
     const jobRef = doc(db, "jobs", jobId);
     const defaultWhen =
@@ -580,6 +643,7 @@ export class FirestoreAdapter implements StoreAdapter {
   }
 
   dismissNotification(id: string): void {
+    if (this.isFallenBack) return this.fallbackAdapter.dismissNotification(id);
     this.state = {
       ...this.state,
       notifications: (this.state.notifications ?? []).filter((n) => n.id !== id),
@@ -588,6 +652,7 @@ export class FirestoreAdapter implements StoreAdapter {
   }
 
   clearNotifications(): void {
+    if (this.isFallenBack) return this.fallbackAdapter.clearNotifications();
     this.state = {
       ...this.state,
       notifications: [],
@@ -596,6 +661,7 @@ export class FirestoreAdapter implements StoreAdapter {
   }
 
   startJobWithOtp(jobId: string, otp: string): boolean {
+    if (this.isFallenBack) return this.fallbackAdapter.startJobWithOtp(jobId, otp);
     const job = this.state.jobs.find((j) => j.id === jobId);
     if (!job || job.status !== "accepted") return false;
     if (job.startOtp && job.startOtp !== otp.trim()) {
@@ -610,6 +676,7 @@ export class FirestoreAdapter implements StoreAdapter {
   }
 
   async flagJob(jobId: string, reason: string): Promise<void> {
+    if (this.isFallenBack) return this.fallbackAdapter.flagJob(jobId, reason);
     const { db } = getFirebase();
     await updateDoc(doc(db, "jobs", jobId), {
       flagged: true,
@@ -618,6 +685,7 @@ export class FirestoreAdapter implements StoreAdapter {
   }
 
   async reportProblem(jobId: string, reason: string, details?: string): Promise<void> {
+    if (this.isFallenBack) return this.fallbackAdapter.reportProblem(jobId, reason, details);
     const { db } = getFirebase();
     await updateDoc(doc(db, "jobs", jobId), {
       problemReported: {
@@ -629,6 +697,7 @@ export class FirestoreAdapter implements StoreAdapter {
   }
 
   blockWorker(workerId: string): void {
+    if (this.isFallenBack) return this.fallbackAdapter.blockWorker(workerId);
     const current = this.state.blockedWorkers ?? [];
     if (current.includes(workerId)) return;
     this.state = {
@@ -639,6 +708,7 @@ export class FirestoreAdapter implements StoreAdapter {
   }
 
   unblockWorker(workerId: string): void {
+    if (this.isFallenBack) return this.fallbackAdapter.unblockWorker(workerId);
     const current = this.state.blockedWorkers ?? [];
     this.state = {
       ...this.state,
@@ -656,6 +726,7 @@ export class FirestoreAdapter implements StoreAdapter {
     phone?: string;
     idDocumentName?: string;
   }): string {
+    if (this.isFallenBack) return this.fallbackAdapter.joinWorker(input);
     const id = `w-${Date.now()}`;
     const newWorker: Worker = {
       id,
@@ -680,6 +751,7 @@ export class FirestoreAdapter implements StoreAdapter {
   }
 
   async toggleWorkerBadge(workerId: string, badge: Badge): Promise<void> {
+    if (this.isFallenBack) return this.fallbackAdapter.toggleWorkerBadge(workerId, badge);
     const worker = this.state.workers.find((w) => w.id === workerId);
     if (!worker) return;
     const has = worker.badges.includes(badge);
@@ -691,6 +763,7 @@ export class FirestoreAdapter implements StoreAdapter {
   }
 
   async setWorkerVerification(workerId: string, pending: boolean): Promise<void> {
+    if (this.isFallenBack) return this.fallbackAdapter.setWorkerVerification(workerId, pending);
     const { db } = getFirebase();
     await updateDoc(doc(db, "workers", workerId), { pendingVerification: pending });
   }

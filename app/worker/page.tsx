@@ -3,9 +3,19 @@
 import { useSyncExternalStore, useState } from "react";
 import WorkerMiniMapDynamic from "@/components/map/WorkerMiniMapDynamic";
 import { Badges, Monogram, Note, OnlineDot, StarRow, Stars, StatusTag } from "@/components/ui";
-import { etaMinutes, fmtKm, fmtWhen, haversineKm, inr } from "@/lib/geo";
+import { etaMinutes, fmtKm, fmtWhen, haversineKm, inr, maskPhone } from "@/lib/geo";
 import { categoryById } from "@/lib/seed";
-import { advanceJob, declineJob, setBaseRate, setMyWorker, setOnline, submitOffer, useStore, workerRespondToCounter } from "@/lib/store";
+import {
+  advanceJob,
+  declineJob,
+  setBaseRate,
+  setMyWorker,
+  setOnline,
+  startJobWithOtp,
+  submitOffer,
+  useStore,
+  workerRespondToCounter,
+} from "@/lib/store";
 import type { Job, Worker } from "@/lib/types";
 
 function IncomingRequest({ job, me }: { job: Job; me: Worker }) {
@@ -29,6 +39,9 @@ function IncomingRequest({ job, me }: { job: Job; me: Worker }) {
             <p className="text-lg leading-snug">{job.description}</p>
             <p className="mt-1 text-[15px] text-muted">
               {job.customerLoc.label ?? "Customer"}, {fmtKm(dist)} from you, about {etaMinutes(dist)} min
+            </p>
+            <p className="mt-0.5 text-xs text-muted font-mono">
+              🔒 Customer: {maskPhone(job.customerPhone)} <span className="font-sans italic">(masked until accepted)</span>
             </p>
           </div>
           <div className="shrink-0 text-right">
@@ -149,6 +162,17 @@ const STEPS = ["Assigned", "Working", "Done"];
 function ActiveJob({ job }: { job: Job }) {
   const cat = categoryById(job.category);
   const step = job.status === "accepted" ? 0 : 1;
+  const [otpInput, setOtpInput] = useState("");
+  const [otpError, setOtpError] = useState("");
+
+  const handleStartWithOtp = () => {
+    setOtpError("");
+    const ok = startJobWithOtp(job.id, otpInput);
+    if (!ok) {
+      setOtpError("Incorrect 4-digit code. Please ask the customer for the start code shown on their screen.");
+    }
+  };
+
   return (
     <article className="flyer overflow-hidden">
       <header className="flex items-center justify-between gap-3 px-4 py-3" style={{ background: cat.tone }}>
@@ -156,12 +180,25 @@ function ActiveJob({ job }: { job: Job }) {
         <StatusTag status={job.status} />
       </header>
       <div className="space-y-4 px-4 py-4">
+        {job.flagged && (
+          <div className="rounded-md border-2 border-chilli bg-chilli/10 p-3 text-xs">
+            <span className="font-bold text-chilli">⚠️ Job Flagged:</span>{" "}
+            <span>{job.flaggedReason || "Emergency flag active on this job"}</span>
+          </div>
+        )}
+
         <div className="flex items-start justify-between gap-4">
           <div>
             <p className="text-lg leading-snug">{job.description}</p>
             <p className="mt-1 text-[15px] text-muted">
               {job.customerLoc.label ?? "Customer"},{" "}
               {job.mode === "on-demand" ? "as soon as possible" : fmtWhen(job.scheduledFor)}
+            </p>
+            <p className="mt-1 text-sm font-bold text-neel">
+              📞 Customer Phone:{" "}
+              <a href={`tel:${job.customerPhone || "+919820198765"}`} className="underline">
+                {job.customerPhone || "+91 98201 98765"}
+              </a>
             </p>
           </div>
           <div className="shrink-0 text-right">
@@ -184,9 +221,44 @@ function ActiveJob({ job }: { job: Job }) {
           ))}
         </ol>
 
-        <button onClick={() => advanceJob(job.id)} className="btn btn-go">
-          {job.status === "accepted" ? "Start the job" : "Mark as done"}
-        </button>
+        {job.status === "accepted" ? (
+          <div className="space-y-2 rounded-md border-2 border-dashed border-neel bg-wall p-3">
+            <label htmlFor={`otp-${job.id}`} className="block text-xs font-bold uppercase tracking-wider text-muted">
+              Enter 4-Digit Customer Start Code
+            </label>
+            <div className="flex flex-wrap items-center gap-2">
+              <input
+                id={`otp-${job.id}`}
+                type="text"
+                maxLength={4}
+                placeholder="0000"
+                value={otpInput}
+                onChange={(e) => {
+                  setOtpInput(e.target.value.replace(/\D/g, ""));
+                  setOtpError("");
+                }}
+                className="field num w-28 text-center text-xl font-bold tracking-widest min-h-[44px]"
+              />
+              <button
+                type="button"
+                onClick={handleStartWithOtp}
+                disabled={otpInput.length !== 4}
+                className="btn btn-go text-sm font-bold min-h-[44px] px-4"
+              >
+                Verify & Start Job
+              </button>
+            </div>
+            {otpError && <p className="text-xs font-semibold text-chilli">{otpError}</p>}
+            <p className="text-[11px] text-muted">
+              Ask customer for the 4-digit code shown on their screen.{" "}
+              {job.startOtp && <span className="font-mono text-muted/70">(Demo hint: {job.startOtp})</span>}
+            </p>
+          </div>
+        ) : (
+          <button onClick={() => advanceJob(job.id)} className="btn btn-go min-h-[44px] px-5 font-bold">
+            Mark as done
+          </button>
+        )}
       </div>
     </article>
   );

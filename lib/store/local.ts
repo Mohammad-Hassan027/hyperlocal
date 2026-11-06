@@ -4,11 +4,13 @@ import { SEED_WORKERS } from "../seed";
 import type {
   AppNotification,
   AppState,
+  Badge,
   CategoryId,
   CreateJobInput,
   Job,
   LatLng,
   Offer,
+  Worker,
 } from "../types";
 import type { StoreAdapter } from "./types";
 
@@ -22,6 +24,7 @@ export const SEED_STATE: AppState = {
   bots: true,
   demoSpeed: 20,
   notifications: [],
+  blockedWorkers: [],
 };
 
 const uid = () => Math.random().toString(36).slice(2, 9);
@@ -33,7 +36,9 @@ export function nearbyWorkers(
   radiusKm: number,
   category?: CategoryId,
 ) {
+  const blocked = s.blockedWorkers ?? [];
   return s.workers
+    .filter((w) => !blocked.includes(w.id))
     .filter((w) => !category || w.categories.includes(category))
     .map((w) => ({ worker: w, distanceKm: haversineKm(loc, w.loc) }))
     .filter((x) => x.distanceKm <= radiusKm);
@@ -55,6 +60,7 @@ export class LocalStorageAdapter implements StoreAdapter {
           ...SEED_STATE,
           ...parsed,
           notifications: Array.isArray(parsed.notifications) ? parsed.notifications : [],
+          blockedWorkers: Array.isArray(parsed.blockedWorkers) ? parsed.blockedWorkers : [],
         };
       } else {
         localStorage.setItem(KEY, JSON.stringify(this.state));
@@ -69,6 +75,7 @@ export class LocalStorageAdapter implements StoreAdapter {
             ...SEED_STATE,
             ...parsed,
             notifications: Array.isArray(parsed.notifications) ? parsed.notifications : [],
+            blockedWorkers: Array.isArray(parsed.blockedWorkers) ? parsed.blockedWorkers : [],
           };
           this.emit();
         } catch {}
@@ -201,6 +208,8 @@ export class LocalStorageAdapter implements StoreAdapter {
       budget: input.budget,
       radiusKm: input.radiusKm,
       customerLoc,
+      customerPhone: "+91 98201 98765",
+      startOtp: String(Math.floor(1000 + Math.random() * 9000)),
       status: "open",
       broadcastTo,
       offers: [],
@@ -291,6 +300,7 @@ export class LocalStorageAdapter implements StoreAdapter {
       kind === "accept"
         ? {
             ...job,
+            startOtp: job.startOtp || String(Math.floor(1000 + Math.random() * 9000)),
             offers: [
               ...others.map((o) => ({ ...o, status: "rejected" as const })),
               offer,
@@ -488,8 +498,10 @@ export class LocalStorageAdapter implements StoreAdapter {
     const offer = job?.offers.find((o) => o.id === offerId);
     if (!job || !offer || job.status !== "open" || job.assignedWorkerId) return;
 
+    const startOtp = job.startOtp || String(Math.floor(1000 + Math.random() * 9000));
     const next: Job = {
       ...job,
+      startOtp,
       offers: job.offers.map((o) => ({
         ...o,
         status: o.id === offerId ? ("accepted" as const) : ("rejected" as const),
@@ -578,6 +590,140 @@ export class LocalStorageAdapter implements StoreAdapter {
       workers,
       jobs: this.state.jobs.map((j) =>
         j.id === jobId ? { ...j, review: { rating, text } } : j,
+      ),
+    });
+  }
+
+  startJobWithOtp(jobId: string, otp: string): boolean {
+    const job = this.state.jobs.find((j) => j.id === jobId);
+    if (!job || job.status !== "accepted") return false;
+    if (job.startOtp && job.startOtp !== otp.trim()) {
+      return false;
+    }
+    const next: Job = {
+      ...job,
+      status: "in_progress",
+      startedAt: Date.now(),
+    };
+    this.set({
+      ...this.state,
+      jobs: this.state.jobs.map((j) => (j.id === jobId ? next : j)),
+    });
+    return true;
+  }
+
+  flagJob(jobId: string, reason: string): void {
+    const job = this.state.jobs.find((j) => j.id === jobId);
+    if (!job) return;
+    const next: Job = {
+      ...job,
+      flagged: true,
+      flaggedReason: reason,
+    };
+    const notif: AppNotification = {
+      id: uid(),
+      type: "job_accepted",
+      title: "⚠️ Emergency SOS Logged",
+      body: `SOS report logged: ${reason} (Demo safety flag recorded)`,
+      jobId,
+      createdAt: Date.now(),
+      read: false,
+    };
+    this.set({
+      ...this.state,
+      jobs: this.state.jobs.map((j) => (j.id === jobId ? next : j)),
+      notifications: [notif, ...(this.state.notifications ?? [])].slice(0, 20),
+    });
+    notifyUser(notif);
+  }
+
+  reportProblem(jobId: string, reason: string, details?: string): void {
+    const job = this.state.jobs.find((j) => j.id === jobId);
+    if (!job) return;
+    const next: Job = {
+      ...job,
+      problemReported: {
+        reason,
+        details,
+        reportedAt: Date.now(),
+      },
+    };
+    this.set({
+      ...this.state,
+      jobs: this.state.jobs.map((j) => (j.id === jobId ? next : j)),
+    });
+  }
+
+  blockWorker(workerId: string): void {
+    const current = this.state.blockedWorkers ?? [];
+    if (current.includes(workerId)) return;
+    this.set({
+      ...this.state,
+      blockedWorkers: [...current, workerId],
+    });
+  }
+
+  unblockWorker(workerId: string): void {
+    const current = this.state.blockedWorkers ?? [];
+    this.set({
+      ...this.state,
+      blockedWorkers: current.filter((id) => id !== workerId),
+    });
+  }
+
+  joinWorker(input: {
+    name: string;
+    categories: CategoryId[];
+    baseRate: number;
+    area: string;
+    bio?: string;
+    phone?: string;
+    idDocumentName?: string;
+  }): string {
+    const id = `w-${Date.now()}`;
+    const newWorker: Worker = {
+      id,
+      name: input.name,
+      emoji: "👷",
+      bio: input.bio || "Demo applicant profile in sandbox.",
+      categories: input.categories,
+      baseRate: input.baseRate,
+      rating: 5.0,
+      jobsDone: 0,
+      badges: [],
+      reviews: [],
+      online: true,
+      loc: { ...this.state.location, label: input.area },
+      phone: input.phone || `+91 98201 ${String(Math.floor(10000 + Math.random() * 90000))}`,
+      pendingVerification: true,
+      idDocumentName: input.idDocumentName || "mock_id_card.png",
+    };
+    this.set({
+      ...this.state,
+      workers: [newWorker, ...this.state.workers],
+    });
+    return id;
+  }
+
+  toggleWorkerBadge(workerId: string, badge: Badge): void {
+    this.set({
+      ...this.state,
+      workers: this.state.workers.map((w) => {
+        if (w.id !== workerId) return w;
+        const has = w.badges.includes(badge);
+        const nextBadges = has
+          ? w.badges.filter((b) => b !== badge)
+          : [...w.badges, badge];
+        return { ...w, badges: nextBadges };
+      }),
+    });
+  }
+
+  setWorkerVerification(workerId: string, pending: boolean): void {
+    this.set({
+      ...this.state,
+      workers: this.state.workers.map((w) =>
+        w.id === workerId ? { ...w, pendingVerification: pending } : w,
       ),
     });
   }

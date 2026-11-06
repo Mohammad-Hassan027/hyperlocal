@@ -60,17 +60,33 @@ export default function Header() {
           QuickKaam
         </Link>
 
-        <nav className="flex gap-1 rounded-md border-2 border-white/35 p-0.5" aria-label="Switch between customer and worker view">
+        <nav className="flex gap-1 rounded-md border-2 border-white/35 p-0.5" aria-label="Switch views">
           {tab("/customer", "Customer", customerBadgeCount)}
           {tab("/worker", "Worker", workerBadgeCount)}
+          {tab("/admin", "Admin")}
         </nav>
 
         <details className="relative text-sm">
           <summary className="cursor-pointer list-none rounded px-2 py-1.5 font-semibold underline decoration-white/50 underline-offset-4 hover:decoration-white">
             Demo tools
           </summary>
-          <div className="absolute right-0 mt-2 w-64 rounded-md bg-paper p-4 text-ink shadow-xl">
-            <label className="flex cursor-pointer items-start gap-2.5">
+          <div className="absolute right-0 mt-2 w-64 rounded-md bg-paper p-4 text-ink shadow-xl space-y-3">
+            <div className="space-y-1.5">
+              <Link
+                href="/admin"
+                className="block text-xs font-bold text-neel hover:underline"
+              >
+                ⚙️ Admin Console (Toggle Badges)
+              </Link>
+              <Link
+                href="/worker/join"
+                className="block text-xs font-bold text-neel hover:underline"
+              >
+                📝 Worker Registration Form
+              </Link>
+            </div>
+
+            <label className="flex cursor-pointer items-start gap-2.5 tear-t pt-2">
               <input
                 type="checkbox"
                 checked={bots}

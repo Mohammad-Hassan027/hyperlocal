@@ -54,33 +54,69 @@ export function Monogram({ name, tone, size = 44 }: { name: string; tone: string
   );
 }
 
-const BADGE_LABEL: Record<Badge, string> = {
-  id_verified: "ID verified",
-  background_checked: "Background checked",
-  skill_certified: "Skill certified",
-  top_rated: "Top rated",
+export const BADGE_LABEL: Record<Badge, string> = {
+  id_verified: "Demo ID check",
+  background_checked: "Demo bg check",
+  skill_certified: "Demo skill check",
+  top_rated: "Top rated (demo)",
 };
 
-export function Badges({ badges }: { badges: Badge[] }) {
-  if (!badges.length) return <span className="text-sm text-muted">New here, nothing verified yet</span>;
+export function Badges({
+  badges,
+  pendingVerification = false,
+  showDisclaimer = false,
+}: {
+  badges: Badge[];
+  pendingVerification?: boolean;
+  showDisclaimer?: boolean;
+}) {
+  if (pendingVerification) {
+    return (
+      <div className="space-y-0.5">
+        <span className="inline-flex items-center gap-1 rounded-sm border border-marigold bg-marigold-soft px-2 py-0.5 text-xs font-bold text-ink">
+          ⏳ Pending demo verification
+        </span>
+        {showDisclaimer && (
+          <span className="block text-[11px] text-muted italic">Demo simulation — no real-world checks</span>
+        )}
+      </div>
+    );
+  }
+
+  if (!badges.length) {
+    return (
+      <div className="space-y-0.5">
+        <span className="text-xs text-muted">Demo applicant · No demo checks yet</span>
+        {showDisclaimer && (
+          <span className="block text-[11px] text-muted italic">Demo simulation — no real-world checks</span>
+        )}
+      </div>
+    );
+  }
+
   return (
-    <ul className="flex flex-wrap gap-1.5">
-      {badges.map((b) => (
-        <li
-          key={b}
-          className={`inline-flex items-center gap-1 rounded-sm border px-1.5 py-px text-[13px] font-semibold ${
-            b === "top_rated"
-              ? "border-ink bg-marigold-soft"
-              : "border-ink/40 bg-white"
-          }`}
-        >
-          <svg viewBox="0 0 16 16" className="size-3.5" aria-hidden="true">
-            <path d="M3 8.5l3.2 3L13 4.8" fill="none" stroke="#17783f" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-          {BADGE_LABEL[b]}
-        </li>
-      ))}
-    </ul>
+    <div className="space-y-0.5">
+      <ul className="flex flex-wrap gap-1.5" aria-label="Demo verification badges">
+        {badges.map((b) => (
+          <li
+            key={b}
+            className={`inline-flex items-center gap-1 rounded-sm border px-1.5 py-px text-[12px] font-semibold ${
+              b === "top_rated"
+                ? "border-ink bg-marigold-soft"
+                : "border-ink/40 bg-white"
+            }`}
+          >
+            <svg viewBox="0 0 16 16" className="size-3" aria-hidden="true">
+              <path d="M3 8.5l3.2 3L13 4.8" fill="none" stroke="#17783f" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            {BADGE_LABEL[b]}
+          </li>
+        ))}
+      </ul>
+      {showDisclaimer && (
+        <span className="block text-[11px] text-muted italic">Demo simulation — no real-world checks</span>
+      )}
+    </div>
   );
 }
 

@@ -289,6 +289,7 @@ export default function CustomerView() {
                   }
                   isBestMatch={isBestMatch}
                   matchReason={matchReason}
+                  isAccepted={activeJob?.assignedWorkerId === worker.id}
                 />
               ))}
             </div>

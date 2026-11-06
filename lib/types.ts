@@ -51,6 +51,9 @@ export interface Worker {
   reviews: Review[];
   online: boolean;
   loc: LatLng;
+  phone?: string;
+  pendingVerification?: boolean;
+  idDocumentName?: string;
 }
 
 export type JobMode = "on-demand" | "scheduled";
@@ -106,6 +109,15 @@ export interface Job {
   declinedBy?: string[];
   /** When this job expires if not accepted (default 15 minutes) */
   expiresAt?: number;
+  /** 4-digit start OTP shown to customer on accept and entered by worker */
+  startOtp?: string;
+  /** Customer's phone number (masked until accepted) */
+  customerPhone?: string;
+  /** SOS or emergency flag */
+  flagged?: boolean;
+  flaggedReason?: string;
+  /** Problem report filed after completion */
+  problemReported?: { reason: string; details?: string; reportedAt: number };
 }
 
 export interface CreateJobInput {
@@ -140,4 +152,6 @@ export interface AppState {
   /** Demo travel speed: 1 (real-time) or 20 (stage demo ~25s arrival) */
   demoSpeed: number;
   notifications?: AppNotification[];
+  /** Worker IDs explicitly blocked by customer */
+  blockedWorkers?: string[];
 }

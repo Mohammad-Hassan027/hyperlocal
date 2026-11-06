@@ -22,6 +22,14 @@ export function fmtKm(km: number): string {
 
 export const inr = (n: number) => `₹${Math.round(n).toLocaleString("en-IN")}`;
 
+/** Mask phone number until accepted: e.g. "+91 98201 12345" -> "+91 98••• ••345" */
+export function maskPhone(phone?: string): string {
+  if (!phone) return "+91 98••• ••000";
+  const digits = phone.replace(/\D/g, "");
+  const last3 = digits.slice(-3);
+  return `+91 98••• ••${last3}`;
+}
+
 /** "2026-10-26T15:30" → "26 Oct, 3:30 pm" */
 export function fmtWhen(iso?: string): string {
   if (!iso) return "";

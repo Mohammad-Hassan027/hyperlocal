@@ -1,22 +1,42 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { etaMinutes, fmtKm, fmtWhen, haversineKm, inr } from "@/lib/geo";
+import Link from "next/link";
+import { etaMinutes, fmtKm, fmtWhen, haversineKm, inr, maskPhone } from "@/lib/geo";
 import { categoryById } from "@/lib/seed";
-import { acceptOffer, cancelJob, customerCounterOffer, submitReview, switchToScheduled, updateBudget, useStore } from "@/lib/store";
+import {
+  acceptOffer,
+  blockWorker,
+  cancelJob,
+  customerCounterOffer,
+  reportProblem,
+  submitReview,
+  switchToScheduled,
+  unblockWorker,
+  updateBudget,
+  useStore,
+} from "@/lib/store";
 import type { Job } from "@/lib/types";
 import { Badges, Monogram, Star, StatusTag, Stars } from "./ui";
 
 export default function CustomerJobCard({ job }: { job: Job }) {
   const workers = useStore((s) => s.workers);
+  const blockedWorkers = useStore((s) => s.blockedWorkers ?? []);
   const demoSpeed = useStore((s) => s.demoSpeed ?? 20);
   const cat = categoryById(job.category);
   const assigned = workers.find((w) => w.id === job.assignedWorkerId);
+  const isAssignedBlocked = assigned ? blockedWorkers.includes(assigned.id) : false;
+
   const [newBudget, setNewBudget] = useState(job.budget);
   const [rating, setRating] = useState(5);
   const [text, setText] = useState("");
   const [counterValues, setCounterValues] = useState<Record<string, number>>({});
   const [openCounterOfferId, setOpenCounterOfferId] = useState<string | null>(null);
+
+  // Problem reporting state
+  const [showProblemForm, setShowProblemForm] = useState(false);
+  const [problemReason, setProblemReason] = useState("Work quality");
+  const [problemDetails, setProblemDetails] = useState("");
 
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -150,6 +170,9 @@ export default function CustomerJobCard({ job }: { job: Job }) {
                             <p className="text-sm text-muted">
                               {fmtKm(d)} away, about {etaMinutes(d)} min
                             </p>
+                            <p className="text-xs text-muted font-mono mt-0.5">
+                              🔒 Phone: {maskPhone(w.phone)} <span className="font-sans text-[11px] italic">(masked until accepted)</span>
+                            </p>
                             <div className="mt-1">
                               <Badges badges={w.badges} />
                             </div>
@@ -273,36 +296,81 @@ export default function CustomerJobCard({ job }: { job: Job }) {
           </>
         )}
 
+        {job.flagged && (
+          <div className="rounded-md border-2 border-chilli bg-chilli/10 p-3 text-sm">
+            <div className="flex items-center gap-2 font-bold text-chilli">
+              <span>⚠️ Emergency SOS Alert Logged</span>
+              <span className="rounded bg-chilli px-1.5 py-0.5 text-[10px] uppercase text-white font-extrabold">Active Flag</span>
+            </div>
+            <p className="mt-1 text-xs text-muted">
+              {job.flaggedReason || "SOS triggered from live tracking sheet"}. (Demo safety simulation)
+            </p>
+          </div>
+        )}
+
         {assigned && (job.status === "accepted" || job.status === "in_progress") && (
-          <div className="flex items-center gap-3 rounded-md border-2 border-ink/25 p-3">
-            <Monogram name={assigned.name} tone={cat.tone} size={48} />
-            <div className="min-w-0 flex-1">
-              <p className="flex flex-wrap items-center gap-x-3 font-bold">
-                {assigned.name} <Stars value={assigned.rating} />
-              </p>
-              <p className="text-[15px] font-semibold">
-                {job.status === "accepted" ? (
-                  <span className="flex items-center gap-1.5 text-ink">
-                    <span className="inline-block size-2 animate-ping rounded-full bg-marigold" />
-                    {etaDisplay}
-                  </span>
-                ) : (
-                  "Working on it now"
-                )}
-              </p>
-              <div className="mt-1">
-                <Badges badges={assigned.badges} />
+          <div className="space-y-3">
+            <div className="flex items-center gap-3 rounded-md border-2 border-ink/25 p-3">
+              <Monogram name={assigned.name} tone={cat.tone} size={48} />
+              <div className="min-w-0 flex-1">
+                <p className="flex flex-wrap items-center gap-x-3 font-bold">
+                  {assigned.name} <Stars value={assigned.rating} />
+                </p>
+                <p className="text-[15px] font-semibold">
+                  {job.status === "accepted" ? (
+                    <span className="flex items-center gap-1.5 text-ink">
+                      <span className="inline-block size-2 animate-ping rounded-full bg-marigold" />
+                      {etaDisplay}
+                    </span>
+                  ) : (
+                    "Working on it now"
+                  )}
+                </p>
+                <div className="mt-1">
+                  <Badges badges={assigned.badges} pendingVerification={assigned.pendingVerification} />
+                </div>
+              </div>
+              <div className="text-right">
+                <div className="num text-2xl leading-none">{inr(job.finalPrice ?? job.budget)}</div>
+                <div className="mt-0.5 text-xs font-semibold text-muted">agreed price</div>
               </div>
             </div>
-            <div className="text-right">
-              <div className="num text-2xl leading-none">{inr(job.finalPrice ?? job.budget)}</div>
-              <div className="mt-0.5 text-xs font-semibold text-muted">agreed price</div>
+
+            {/* Start-Job OTP Box: only visible on accept */}
+            {job.status === "accepted" && (
+              <div className="rounded-md border-2 border-dashed border-neel bg-wall p-3 text-center space-y-1">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-muted">
+                  Start-Job 4-Digit Code
+                </span>
+                <div className="num text-3xl font-extrabold tracking-widest text-neel">
+                  {job.startOtp ?? "4821"}
+                </div>
+                <p className="text-xs text-muted">
+                  Share this 4-digit code with {assigned.name.split(" ")[0]} upon arrival. The worker must enter it to start.
+                </p>
+              </div>
+            )}
+
+            {/* Direct Contact & Live Tracking Share */}
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+              <a
+                href={`tel:${assigned.phone || "+919820112345"}`}
+                className="btn btn-neel text-xs min-h-[38px] px-3 font-bold"
+              >
+                📞 Call {assigned.phone || "+91 98201 12345"}
+              </a>
+              <Link
+                href={`/track/${job.id}`}
+                className="btn btn-line text-xs min-h-[38px] px-3 font-bold"
+              >
+                ↗ Share live status & SOS
+              </Link>
             </div>
           </div>
         )}
 
         {job.status === "completed" && assigned && (
-          <div className="rounded-md bg-marigold-soft p-3">
+          <div className="space-y-3 rounded-md bg-marigold-soft p-3">
             <p className="font-bold">
               {assigned.name} finished the job for {inr(job.finalPrice ?? job.budget)}.
             </p>
@@ -311,7 +379,7 @@ export default function CustomerJobCard({ job }: { job: Job }) {
                 You gave {job.review.rating} out of 5{job.review.text && `: “${job.review.text}”`}
               </p>
             ) : (
-              <div className="mt-2 space-y-2.5">
+              <div className="space-y-2.5">
                 <div className="flex gap-0.5" role="radiogroup" aria-label="Your rating">
                   {[1, 2, 3, 4, 5].map((n) => (
                     <button
@@ -341,6 +409,80 @@ export default function CustomerJobCard({ job }: { job: Job }) {
                 </button>
               </div>
             )}
+
+            {/* Problem Reporting & Block Worker */}
+            <div className="tear-t pt-2.5 space-y-2">
+              {job.problemReported ? (
+                <div className="rounded-sm border border-chilli/40 bg-paper p-2 text-xs">
+                  <span className="font-bold text-chilli">⚠️ Problem reported:</span>{" "}
+                  <span>{job.problemReported.reason}</span>
+                  {job.problemReported.details && <p className="mt-0.5 text-muted">“{job.problemReported.details}”</p>}
+                </div>
+              ) : (
+                <div>
+                  <button
+                    onClick={() => setShowProblemForm((s) => !s)}
+                    className="text-xs font-semibold text-chilli underline underline-offset-2"
+                  >
+                    {showProblemForm ? "Cancel report" : "⚠️ Report a problem"}
+                  </button>
+                  {showProblemForm && (
+                    <div className="mt-2 space-y-2 rounded-md border border-ink/20 bg-paper p-3 text-xs">
+                      <label className="block font-bold">Select issue</label>
+                      <select
+                        value={problemReason}
+                        onChange={(e) => setProblemReason(e.target.value)}
+                        className="field text-xs py-1.5"
+                      >
+                        <option value="Work quality">Work quality</option>
+                        <option value="Unprofessional behaviour">Unprofessional behaviour</option>
+                        <option value="Overcharging">Overcharging</option>
+                        <option value="Safety concern">Safety concern</option>
+                        <option value="Other">Other</option>
+                      </select>
+                      <input
+                        value={problemDetails}
+                        onChange={(e) => setProblemDetails(e.target.value)}
+                        placeholder="Additional details (optional)"
+                        className="field text-xs py-1.5"
+                      />
+                      <button
+                        onClick={() => {
+                          reportProblem(job.id, problemReason, problemDetails);
+                          setShowProblemForm(false);
+                        }}
+                        className="btn btn-chilli text-xs min-h-[34px] px-3 font-bold"
+                      >
+                        Submit problem report
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div className="flex items-center justify-between text-xs pt-1">
+                <span className="text-muted">Preference:</span>
+                {isAssignedBlocked ? (
+                  <button
+                    onClick={() => unblockWorker(assigned.id)}
+                    className="font-bold text-signal underline"
+                  >
+                    Unblock {assigned.name.split(" ")[0]}
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => {
+                      if (confirm(`Block ${assigned.name}? They will not appear in future searches.`)) {
+                        blockWorker(assigned.id);
+                      }
+                    }}
+                    className="font-bold text-chilli underline"
+                  >
+                    Block {assigned.name.split(" ")[0]}
+                  </button>
+                )}
+              </div>
+            </div>
           </div>
         )}
 

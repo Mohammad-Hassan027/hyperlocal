@@ -1,4 +1,4 @@
-import type { AppState, CreateJobInput, LatLng, Offer } from "../types";
+import type { AppState, Badge, CategoryId, CreateJobInput, LatLng, Offer } from "../types";
 
 export interface StoreAdapter {
   init(): void;
@@ -38,4 +38,20 @@ export interface StoreAdapter {
   switchToScheduled(jobId: string, scheduledFor?: string): Promise<void> | void;
   dismissNotification(id: string): void;
   clearNotifications(): void;
+  startJobWithOtp(jobId: string, otp: string): boolean;
+  flagJob(jobId: string, reason: string): Promise<void> | void;
+  reportProblem(jobId: string, reason: string, details?: string): Promise<void> | void;
+  blockWorker(workerId: string): void;
+  unblockWorker(workerId: string): void;
+  joinWorker(input: {
+    name: string;
+    categories: CategoryId[];
+    baseRate: number;
+    area: string;
+    bio?: string;
+    phone?: string;
+    idDocumentName?: string;
+  }): string;
+  toggleWorkerBadge(workerId: string, badge: Badge): Promise<void> | void;
+  setWorkerVerification(workerId: string, pending: boolean): Promise<void> | void;
 }

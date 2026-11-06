@@ -94,4 +94,5 @@ export const SEED_WORKERS: Worker[] = RAW.map((w, i) => ({
   reviews: reviews(i),
   online: w.online,
   loc: { lat: w.lat, lng: w.lng, label: w.area },
+  phone: `+91 98201 ${String(10000 + i * 231).slice(0, 5)}`,
 }));

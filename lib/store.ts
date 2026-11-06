@@ -8,6 +8,7 @@ import { LocalStorageAdapter, SEED_STATE } from "./store/local";
 import type { StoreAdapter } from "./store/types";
 import type {
   AppState,
+  Badge,
   CategoryId,
   CreateJobInput,
   LatLng,
@@ -66,7 +67,9 @@ export function nearbyWorkers(
   radiusKm: number,
   category?: CategoryId,
 ) {
+  const blocked = s.blockedWorkers ?? [];
   return s.workers
+    .filter((w) => !blocked.includes(w.id))
     .filter((w) => !category || w.categories.includes(category))
     .map((w) => ({ worker: w, distanceKm: haversineKm(loc, w.loc) }))
     .filter((x) => x.distanceKm <= radiusKm);
@@ -168,4 +171,44 @@ export function dismissNotification(id: string) {
 
 export function clearNotifications() {
   getStoreAdapter().clearNotifications();
+}
+
+export function startJobWithOtp(jobId: string, otp: string): boolean {
+  return getStoreAdapter().startJobWithOtp(jobId, otp);
+}
+
+export function flagJob(jobId: string, reason: string) {
+  getStoreAdapter().flagJob(jobId, reason);
+}
+
+export function reportProblem(jobId: string, reason: string, details?: string) {
+  getStoreAdapter().reportProblem(jobId, reason, details);
+}
+
+export function blockWorker(workerId: string) {
+  getStoreAdapter().blockWorker(workerId);
+}
+
+export function unblockWorker(workerId: string) {
+  getStoreAdapter().unblockWorker(workerId);
+}
+
+export function joinWorker(input: {
+  name: string;
+  categories: CategoryId[];
+  baseRate: number;
+  area: string;
+  bio?: string;
+  phone?: string;
+  idDocumentName?: string;
+}): string {
+  return getStoreAdapter().joinWorker(input);
+}
+
+export function toggleWorkerBadge(workerId: string, badge: Badge) {
+  getStoreAdapter().toggleWorkerBadge(workerId, badge);
+}
+
+export function setWorkerVerification(workerId: string, pending: boolean) {
+  getStoreAdapter().setWorkerVerification(workerId, pending);
 }

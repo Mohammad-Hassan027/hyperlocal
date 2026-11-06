@@ -1,7 +1,7 @@
 "use client";
 
 import { useId, useState } from "react";
-import { etaMinutes, fmtKm, inr } from "@/lib/geo";
+import { etaMinutes, fmtKm, inr, maskPhone } from "@/lib/geo";
 import { categoryById } from "@/lib/seed";
 import type { CategoryId, Worker } from "@/lib/types";
 import { Badges, Monogram, OnlineDot, StarRow, Stars } from "./ui";
@@ -16,6 +16,7 @@ export default function WorkerCard({
   onHover,
   isBestMatch = false,
   matchReason,
+  isAccepted = false,
 }: {
   worker: Worker;
   category: CategoryId;
@@ -25,6 +26,7 @@ export default function WorkerCard({
   onHover?: (hovering: boolean) => void;
   isBestMatch?: boolean;
   matchReason?: string;
+  isAccepted?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const reviewsId = useId();
@@ -69,13 +71,33 @@ export default function WorkerCard({
       </header>
 
       <div className="space-y-2.5 px-4 py-3.5">
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[15px]">
-          <Stars value={worker.rating} />
-          <span>{worker.jobsDone} jobs done</span>
-          <OnlineDot online={worker.online} />
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[15px]">
+            <Stars value={worker.rating} />
+            <span>{worker.jobsDone} jobs done</span>
+            <OnlineDot online={worker.online} />
+          </div>
+          <span className="rounded bg-wall px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-muted">
+            Demo profile
+          </span>
         </div>
         <p className="text-[15px]">{worker.bio}</p>
-        <Badges badges={worker.badges} />
+        <Badges badges={worker.badges} pendingVerification={worker.pendingVerification} showDisclaimer={true} />
+        <div className="pt-0.5 text-xs">
+          {isAccepted ? (
+            <a
+              href={`tel:${worker.phone || "+919820112345"}`}
+              className="inline-flex items-center gap-1 font-bold text-neel underline underline-offset-2 hover:text-neel-hover"
+            >
+              📞 Direct Call: {worker.phone || "+91 98201 12345"}
+            </a>
+          ) : (
+            <span className="inline-flex items-center gap-1 text-muted font-mono">
+              🔒 Phone: {maskPhone(worker.phone)}
+              <span className="font-sans text-[11px] italic text-muted/80">(masked until accepted)</span>
+            </span>
+          )}
+        </div>
         <button
           onClick={() => setOpen((o) => !o)}
           aria-expanded={open}

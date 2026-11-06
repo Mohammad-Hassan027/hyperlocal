@@ -14,6 +14,7 @@ import { PRESET_LOCATIONS, haversineKm } from "../geo";
 import { SEED_WORKERS } from "../seed";
 import type {
   AppState,
+  Badge,
   CategoryId,
   CreateJobInput,
   Job,
@@ -32,7 +33,9 @@ export function nearbyWorkers(
   radiusKm: number,
   category?: CategoryId,
 ) {
+  const blocked = s.blockedWorkers ?? [];
   return s.workers
+    .filter((w) => !blocked.includes(w.id))
     .filter((w) => !category || w.categories.includes(category))
     .map((w) => ({ worker: w, distanceKm: haversineKm(loc, w.loc) }))
     .filter((x) => x.distanceKm <= radiusKm);
@@ -246,6 +249,7 @@ export class FirestoreAdapter implements StoreAdapter {
         .map((x) => x.worker.id);
     }
 
+    const now = Date.now();
     const job: Job = {
       id,
       category: input.category,
@@ -255,10 +259,13 @@ export class FirestoreAdapter implements StoreAdapter {
       budget: input.budget,
       radiusKm: input.radiusKm,
       customerLoc,
+      customerPhone: "+91 98201 98765",
+      startOtp: String(Math.floor(1000 + Math.random() * 9000)),
       status: "open",
       broadcastTo,
       offers: [],
-      createdAt: Date.now(),
+      createdAt: now,
+      expiresAt: now + 15 * 60 * 1000,
     };
 
     const { db } = getFirebase();
@@ -332,6 +339,7 @@ export class FirestoreAdapter implements StoreAdapter {
 
         tx.update(jobRef, {
           status: "accepted",
+          startOtp: job.startOtp || String(Math.floor(1000 + Math.random() * 9000)),
           assignedWorkerId: workerId,
           finalPrice: price,
           acceptedAt: now,
@@ -388,6 +396,7 @@ export class FirestoreAdapter implements StoreAdapter {
 
       tx.update(jobRef, {
         status: "accepted",
+        startOtp: job.startOtp || String(Math.floor(1000 + Math.random() * 9000)),
         assignedWorkerId: offer.workerId,
         finalPrice: offer.price,
         acceptedAt: now,
@@ -584,5 +593,105 @@ export class FirestoreAdapter implements StoreAdapter {
       notifications: [],
     };
     this.emit();
+  }
+
+  startJobWithOtp(jobId: string, otp: string): boolean {
+    const job = this.state.jobs.find((j) => j.id === jobId);
+    if (!job || job.status !== "accepted") return false;
+    if (job.startOtp && job.startOtp !== otp.trim()) {
+      return false;
+    }
+    const { db } = getFirebase();
+    updateDoc(doc(db, "jobs", jobId), {
+      status: "in_progress",
+      startedAt: Date.now(),
+    }).catch(console.error);
+    return true;
+  }
+
+  async flagJob(jobId: string, reason: string): Promise<void> {
+    const { db } = getFirebase();
+    await updateDoc(doc(db, "jobs", jobId), {
+      flagged: true,
+      flaggedReason: reason,
+    });
+  }
+
+  async reportProblem(jobId: string, reason: string, details?: string): Promise<void> {
+    const { db } = getFirebase();
+    await updateDoc(doc(db, "jobs", jobId), {
+      problemReported: {
+        reason,
+        details: details || "",
+        reportedAt: Date.now(),
+      },
+    });
+  }
+
+  blockWorker(workerId: string): void {
+    const current = this.state.blockedWorkers ?? [];
+    if (current.includes(workerId)) return;
+    this.state = {
+      ...this.state,
+      blockedWorkers: [...current, workerId],
+    };
+    this.emit();
+  }
+
+  unblockWorker(workerId: string): void {
+    const current = this.state.blockedWorkers ?? [];
+    this.state = {
+      ...this.state,
+      blockedWorkers: current.filter((id) => id !== workerId),
+    };
+    this.emit();
+  }
+
+  joinWorker(input: {
+    name: string;
+    categories: CategoryId[];
+    baseRate: number;
+    area: string;
+    bio?: string;
+    phone?: string;
+    idDocumentName?: string;
+  }): string {
+    const id = `w-${Date.now()}`;
+    const newWorker: Worker = {
+      id,
+      name: input.name,
+      emoji: "👷",
+      bio: input.bio || "Demo applicant profile in sandbox.",
+      categories: input.categories,
+      baseRate: input.baseRate,
+      rating: 5.0,
+      jobsDone: 0,
+      badges: [],
+      reviews: [],
+      online: true,
+      loc: { ...this.state.location, label: input.area },
+      phone: input.phone || `+91 98201 ${String(Math.floor(10000 + Math.random() * 90000))}`,
+      pendingVerification: true,
+      idDocumentName: input.idDocumentName || "mock_id_card.png",
+    };
+    const { db } = getFirebase();
+    setDoc(doc(db, "workers", id), cleanUndefined(newWorker)).catch(console.error);
+    return id;
+  }
+
+  async toggleWorkerBadge(workerId: string, badge: Badge): Promise<void> {
+    const worker = this.state.workers.find((w) => w.id === workerId);
+    if (!worker) return;
+    const has = worker.badges.includes(badge);
+    const badges = has
+      ? worker.badges.filter((b) => b !== badge)
+      : [...worker.badges, badge];
+    const { db } = getFirebase();
+    await updateDoc(doc(db, "workers", workerId), { badges });
+  }
+
+  async setWorkerVerification(workerId: string, pending: boolean): Promise<void> {
+    const { db } = getFirebase();
+    await updateDoc(doc(db, "workers", workerId), { pendingVerification: pending });
   }
 }

@@ -192,11 +192,21 @@ function ActiveJob({ job }: { job: Job }) {
   );
 }
 
+// Module-level cache so getNowSnapshot returns a stable value between ticks.
+// useSyncExternalStore requires getSnapshot to be referentially stable until
+// the subscriber fires — calling Date.now() directly would return a new value
+// every millisecond and trigger React error #185.
+let _cachedNow = 0; // 0 = server/prerender; set on first client subscribe
 function subscribeTicker(callback: () => void) {
-  const t = setInterval(callback, 2000);
+  // Seed immediately so the first render after hydration has a real value.
+  if (_cachedNow === 0) _cachedNow = Date.now();
+  const t = setInterval(() => {
+    _cachedNow = Date.now();
+    callback();
+  }, 2000);
   return () => clearInterval(t);
 }
-const getNowSnapshot = () => Date.now();
+const getNowSnapshot = () => _cachedNow;
 const getServerSnapshot = () => 0;
 
 export default function WorkerPage() {

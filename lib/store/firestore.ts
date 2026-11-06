@@ -59,6 +59,7 @@ export class FirestoreAdapter implements StoreAdapter {
     myWorkerId: "w1",
     bots: true,
     demoSpeed: 20,
+    notifications: [],
   };
 
   private listeners = new Set<() => void>();

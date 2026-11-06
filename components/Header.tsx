@@ -11,7 +11,8 @@ export default function Header() {
   const demoSpeed = useStore((s) => s.demoSpeed ?? 20);
   const jobs = useStore((s) => s.jobs);
   const myId = useStore((s) => s.myWorkerId);
-  const me = useStore((s) => s.workers.find((w) => w.id === myId));
+  const workers = useStore((s) => s.workers);
+  const me = workers.find((w) => w.id === myId);
 
   const workerBadgeCount = jobs.filter(
     (j) =>

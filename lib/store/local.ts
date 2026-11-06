@@ -50,7 +50,12 @@ export class LocalStorageAdapter implements StoreAdapter {
     try {
       const raw = localStorage.getItem(KEY);
       if (raw) {
-        this.state = JSON.parse(raw) as AppState;
+        const parsed = JSON.parse(raw);
+        this.state = {
+          ...SEED_STATE,
+          ...parsed,
+          notifications: Array.isArray(parsed.notifications) ? parsed.notifications : [],
+        };
       } else {
         localStorage.setItem(KEY, JSON.stringify(this.state));
       }
@@ -59,11 +64,22 @@ export class LocalStorageAdapter implements StoreAdapter {
     window.addEventListener("storage", (e) => {
       if (e.key === KEY && e.newValue) {
         try {
-          this.state = JSON.parse(e.newValue) as AppState;
+          const parsed = JSON.parse(e.newValue);
+          this.state = {
+            ...SEED_STATE,
+            ...parsed,
+            notifications: Array.isArray(parsed.notifications) ? parsed.notifications : [],
+          };
           this.emit();
         } catch {}
       }
     });
+
+    // Check for expired jobs every 10 s in the background.
+    // We do this here rather than inside getState() so that getState()
+    // always returns a stable this.state reference (required by
+    // useSyncExternalStore — returning a new object each call causes #185).
+    setInterval(() => this.checkExpiry(), 10_000);
   }
 
   subscribe(callback: () => void): () => void {
@@ -75,26 +91,35 @@ export class LocalStorageAdapter implements StoreAdapter {
   }
 
   getState(): AppState {
+    // Return the stable this.state reference so useSyncExternalStore's
+    // getSnapshot doesn't see a new value on every call (React error #185).
+    // Job expiration is handled by checkExpiry(), called on subscribe.
+    return this.state;
+  }
+
+  /** Expire open jobs whose deadline has passed. Mutates this.state and
+   *  emits if anything changed. Called periodically, not inside getState(). */
+  private checkExpiry(): void {
+    if (typeof window === "undefined") return;
     const now = Date.now();
-    let hasExpired = false;
+    let changed = false;
     const jobs = this.state.jobs.map((j) => {
       if (
         j.status === "open" &&
         now >= (j.expiresAt ?? j.createdAt + 15 * 60 * 1000)
       ) {
-        hasExpired = true;
+        changed = true;
         return { ...j, status: "expired" as const };
       }
       return j;
     });
-
-    if (hasExpired && typeof window !== "undefined") {
+    if (changed) {
       this.state = { ...this.state, jobs };
       try {
         localStorage.setItem(KEY, JSON.stringify(this.state));
       } catch {}
+      this.emit();
     }
-    return this.state;
   }
 
   private emit() {

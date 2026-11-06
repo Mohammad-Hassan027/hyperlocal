@@ -3,9 +3,12 @@
 import { useState } from "react";
 import { dismissNotification, useStore } from "@/lib/store";
 import { requestBrowserNotificationPermission } from "@/lib/notifications";
+import type { AppNotification } from "@/lib/types";
+
+const EMPTY_NOTIFICATIONS: AppNotification[] = [];
 
 export default function NotificationToast() {
-  const notifications = useStore((s) => s.notifications ?? []);
+  const notifications = useStore((s) => s.notifications) || EMPTY_NOTIFICATIONS;
   const [browserPermission, setBrowserPermission] = useState<NotificationPermission>(() =>
     typeof window !== "undefined" && "Notification" in window
       ? Notification.permission

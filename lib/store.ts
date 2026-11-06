@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useSyncExternalStore } from "react";
+import { useCallback, useRef, useSyncExternalStore } from "react";
 import { isFirebaseConfigured } from "./firebase";
 import { haversineKm } from "./geo";
 import { FirestoreAdapter } from "./store/firestore";
@@ -86,7 +86,10 @@ export function useStore<T>(selector: (s: AppState) => T): T {
   // across unrelated state updates. This permanently eliminates React error #185.
   const cache = useRef<{ state: AppState; value: T } | null>(null);
 
-  const subscribe = useRef((onStoreChange: () => void) => adapter.subscribe(onStoreChange)).current;
+  const subscribe = useCallback(
+    (onStoreChange: () => void) => adapter.subscribe(onStoreChange),
+    [adapter],
+  );
 
   const getSnapshot = () => {
     const s = adapter.getState();

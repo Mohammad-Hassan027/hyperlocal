@@ -272,9 +272,8 @@ export default function WorkerPage() {
   const myTone = categoryById(me.categories[0]).tone;
   const where = me.loc.label ?? "your area";
 
-  const [now, setNow] = useState(0);
+  const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
-    setNow(Date.now());
     const t = setInterval(() => setNow(Date.now()), 2000);
     return () => clearInterval(t);
   }, []);

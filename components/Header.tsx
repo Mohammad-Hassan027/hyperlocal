@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import NotificationToast from "./NotificationToast";
 import { DemoModeChip } from "./StatusChips";
 import { isFirebaseConfigured } from "@/lib/firebase";
@@ -10,11 +10,38 @@ import { startJudgeMode } from "@/lib/judge";
 import { resetDemo, setBots, setDemoSpeed, useStore } from "@/lib/store";
 import { subscribeFirestoreFallback } from "@/lib/store/firestore";
 
+const DEMO_SESSION_KEY = "quickkaam:demo_mode";
+
+function getDemoSnapshot(): boolean {
+  if (typeof window === "undefined") return false;
+  return sessionStorage.getItem(DEMO_SESSION_KEY) === "1";
+}
+
+function subscribeDemo(cb: () => void): () => void {
+  window.addEventListener("storage", cb);
+  return () => window.removeEventListener("storage", cb);
+}
+
+function useDemoMode(): boolean {
+  const params = useSearchParams();
+  const hasDemoParam = params.get("demo") === "1";
+  const inSession = useSyncExternalStore(subscribeDemo, getDemoSnapshot, () => false);
+
+  useEffect(() => {
+    if (hasDemoParam) {
+      sessionStorage.setItem(DEMO_SESSION_KEY, "1");
+    }
+  }, [hasDemoParam]);
+
+  return hasDemoParam || inSession;
+}
+
 export default function Header() {
   const pathname = usePathname();
   const router = useRouter();
   const isFirebase = isFirebaseConfigured();
   const [isFallenBack, setIsFallenBack] = useState(false);
+  const isDemoMode = useDemoMode();
 
   useEffect(() => {
     return subscribeFirestoreFallback(setIsFallenBack);
@@ -79,7 +106,7 @@ export default function Header() {
         <nav className="flex gap-1 rounded-md border-2 border-white/35 p-0.5" aria-label="Switch views">
           {tab("/customer", "Customer", customerBadgeCount)}
           {tab("/worker", "Worker", workerBadgeCount)}
-          {tab("/admin", "Admin")}
+          {isDemoMode && tab("/admin", "Admin")}
         </nav>
 
         <details className="relative text-sm">
@@ -101,20 +128,22 @@ export default function Header() {
               </button>
             </div>
 
-            <div className="space-y-1.5">
-              <Link
-                href="/admin"
-                className="block text-xs font-bold text-neel hover:underline"
-              >
-                ⚙️ Admin Console (Toggle Badges)
-              </Link>
-              <Link
-                href="/worker/join"
-                className="block text-xs font-bold text-neel hover:underline"
-              >
-                📝 Worker Registration Form
-              </Link>
-            </div>
+            {isDemoMode && (
+              <div className="space-y-1.5">
+                <Link
+                  href="/admin"
+                  className="block text-xs font-bold text-neel hover:underline"
+                >
+                  ⚙️ Admin Console (Toggle Badges)
+                </Link>
+                <Link
+                  href="/worker/join"
+                  className="block text-xs font-bold text-neel hover:underline"
+                >
+                  📝 Worker Registration Form
+                </Link>
+              </div>
+            )}
 
             <label className="flex cursor-pointer items-start gap-2.5 tear-t pt-2">
               <input
@@ -158,14 +187,16 @@ export default function Header() {
                 20× makes the worker arrive in ~25 s on stage.
               </p>
             </div>
-            <button
-              onClick={() => {
-                if (confirm("Reset all demo data?")) resetDemo();
-              }}
-              className="btn btn-line mt-3 w-full"
-            >
-              Reset demo data
-            </button>
+            {isDemoMode && (
+              <button
+                onClick={() => {
+                  if (confirm("Reset all demo data?")) resetDemo();
+                }}
+                className="btn btn-line mt-3 w-full"
+              >
+                Reset demo data
+              </button>
+            )}
           </div>
         </details>
       </div>

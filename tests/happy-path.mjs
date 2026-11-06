@@ -46,8 +46,8 @@ async function runHappyPath() {
     await pageWorker.goto(`${BASE_URL}/worker`);
     await pageWorker.waitForSelector("#acting-as", { timeout: 10000 });
 
-    // Allow adapter and snapshot listeners to settle
-    await new Promise((r) => setTimeout(r, 1500));
+    // Allow adapter auth, snapshot retry, and fallback to settle
+    await new Promise((r) => setTimeout(r, 3500));
 
     // Turn off random bots so they don't race our manual worker
     await pageCustomer.evaluate(() => {

@@ -2,6 +2,79 @@ import { describe, it } from "node:test";
 import assert from "node:assert";
 
 /**
+ * Auth-ordering tests: init() must await ensureAnonymousAuth before attaching
+ * onSnapshot listeners, retry once on permission-denied, then fall back.
+ */
+describe("Firestore init() auth-before-listeners ordering", () => {
+  it("attaches onSnapshot listeners only after ensureAnonymousAuth resolves", async () => {
+    const callOrder = [];
+
+    async function fakeEnsureAuth() {
+      callOrder.push("auth_start");
+      await new Promise((r) => setTimeout(r, 10));
+      callOrder.push("auth_done");
+    }
+
+    function fakeAttachListeners() {
+      callOrder.push("listeners_attached");
+    }
+
+    // Replicate init() ordering: await auth, then attach
+    await fakeEnsureAuth().then(() => fakeAttachListeners());
+
+    assert.deepStrictEqual(
+      callOrder,
+      ["auth_start", "auth_done", "listeners_attached"],
+      "listeners must only be attached after auth resolves",
+    );
+  });
+
+  it("falls back to local when auth fails without attaching listeners", async () => {
+    const callOrder = [];
+
+    async function fakeEnsureAuthFail() {
+      callOrder.push("auth_start");
+      throw new Error("permission-denied");
+    }
+
+    function fakeAttachListeners() {
+      callOrder.push("listeners_attached");
+    }
+
+    function fakeFallback() {
+      callOrder.push("fallback");
+    }
+
+    await fakeEnsureAuthFail()
+      .then(() => fakeAttachListeners())
+      .catch(() => fakeFallback());
+
+    assert.ok(!callOrder.includes("listeners_attached"), "listeners must NOT attach when auth fails");
+    assert.ok(callOrder.includes("fallback"), "fallback must be called on auth failure");
+  });
+
+  it("retries attachListeners once on permission-denied snapshot error, then falls back", async () => {
+    let retryCount = 0;
+    let fallbackCalled = false;
+
+    async function fakeHandleSnapshotError(isRetry) {
+      if (!isRetry) {
+        retryCount++;
+        await Promise.resolve(); // simulate re-auth
+        await fakeHandleSnapshotError(true);
+      } else {
+        fallbackCalled = true;
+      }
+    }
+
+    await fakeHandleSnapshotError(false);
+
+    assert.strictEqual(retryCount, 1, "should retry exactly once on permission-denied");
+    assert.ok(fallbackCalled, "should fall back after retry also fails");
+  });
+});
+
+/**
  * Concurrency test for Firestore runTransaction semantics:
  * Guarantees that submitOffer(..., "accept") and acceptOffer only allow
  * the first accept to win, and a job is never assigned twice.

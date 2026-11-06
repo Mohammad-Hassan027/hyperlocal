@@ -89,6 +89,17 @@ export class FirestoreAdapter implements StoreAdapter {
     });
     this.unsubscribers = [];
     this.fallbackAdapter.init();
+
+    // Preserve any jobs currently in state into the fallback adapter
+    const currentJobs = this.state.jobs;
+    if (currentJobs.length > 0) {
+      const localJobs = this.fallbackAdapter.getState().jobs;
+      const missing = currentJobs.filter((j) => !localJobs.some((lj) => lj.id === j.id));
+      if (missing.length > 0) {
+        this.fallbackAdapter.setJobs([...missing, ...localJobs]);
+      }
+    }
+
     this.fallbackAdapter.subscribe(() => {
       this.state = this.fallbackAdapter.getState();
       this.emit();
@@ -128,10 +139,40 @@ export class FirestoreAdapter implements StoreAdapter {
       if (sp !== null) this.state.demoSpeed = JSON.parse(sp);
     } catch {}
 
+    // Await auth before attaching listeners so Firestore permission rules
+    // can evaluate request.auth immediately on the first snapshot.
     const { auth, db } = getFirebase();
+    ensureAnonymousAuth(auth)
+      .then(() => this.attachListeners(db))
+      .catch((err) => this.fallbackToLocal(err));
+  }
 
-    // Ensure anonymous authentication
-    ensureAnonymousAuth(auth).catch((err) => { this.fallbackToLocal(err); });
+  /**
+   * Attach onSnapshot listeners for workers and jobs.
+   * On a permission-denied error, re-auth once and retry; if the retry also
+   * fails, call fallbackToLocal so the UI degrades gracefully.
+   */
+  private attachListeners(db: ReturnType<typeof getFirebase>["db"], isRetry = false): void {
+    // Tear down any existing listeners before re-subscribing on retry.
+    this.unsubscribers.forEach((u) => { try { u(); } catch {} });
+    this.unsubscribers = [];
+
+    const handleError = async (err: unknown, label: string) => {
+      const code = (err as { code?: string }).code ?? "";
+      console.warn(`Firestore ${label} snapshot error:`, err);
+      if (!isRetry && (code === "permission-denied" || code === "unauthenticated")) {
+        // Re-auth once then re-attach
+        const { auth } = getFirebase();
+        try {
+          await ensureAnonymousAuth(auth, true);
+          this.attachListeners(db, true);
+        } catch (retryErr) {
+          this.fallbackToLocal(retryErr);
+        }
+      } else {
+        this.fallbackToLocal(err);
+      }
+    };
 
     // Listen to workers collection
     const unsubWorkers = onSnapshot(
@@ -141,21 +182,13 @@ export class FirestoreAdapter implements StoreAdapter {
           await this.seedWorkers();
           return;
         }
-
         const workers = snapshot.docs.map((d) => d.data() as Worker);
         if (workers.length > 0) {
-          // Keep canonical order or sort by id
-          this.state = {
-            ...this.state,
-            workers,
-          };
+          this.state = { ...this.state, workers };
           this.emit();
         }
       },
-      (err) => {
-        console.warn("Firestore workers snapshot error:", err);
-        this.fallbackToLocal(err);
-      },
+      (err) => void handleError(err, "workers"),
     );
     this.unsubscribers.push(unsubWorkers);
 
@@ -166,16 +199,10 @@ export class FirestoreAdapter implements StoreAdapter {
         const jobs = snapshot.docs
           .map((d) => d.data() as Job)
           .sort((a, b) => b.createdAt - a.createdAt);
-        this.state = {
-          ...this.state,
-          jobs,
-        };
+        this.state = { ...this.state, jobs };
         this.emit();
       },
-      (err) => {
-        console.warn("Firestore jobs snapshot error:", err);
-        this.fallbackToLocal(err);
-      },
+      (err) => void handleError(err, "jobs"),
     );
     this.unsubscribers.push(unsubJobs);
   }
@@ -207,6 +234,10 @@ export class FirestoreAdapter implements StoreAdapter {
 
   getState(): AppState {
     if (this.isFallenBack) return this.fallbackAdapter.getState();
+    const local = this.fallbackAdapter.getState();
+    if (local.jobs.length > this.state.jobs.length) {
+      return local;
+    }
     return this.state;
   }
 
@@ -284,7 +315,8 @@ export class FirestoreAdapter implements StoreAdapter {
 
   createJob(input: CreateJobInput): string {
     if (this.isFallenBack) return this.fallbackAdapter.createJob(input);
-    const id = uid();
+    const localId = this.fallbackAdapter.createJob(input);
+    const id = localId || uid();
     const customerLoc = this.state.location;
 
     let broadcastTo: string[];
@@ -322,6 +354,12 @@ export class FirestoreAdapter implements StoreAdapter {
     };
 
     const { db } = getFirebase();
+    this.state = {
+      ...this.state,
+      jobs: [job, ...this.state.jobs],
+    };
+    this.emit();
+
     setDoc(doc(db, "jobs", id), cleanUndefined(job)).catch((err) => {
       console.error("Failed to write job to Firestore:", err);
     });
@@ -360,6 +398,7 @@ export class FirestoreAdapter implements StoreAdapter {
     kind: Offer["kind"],
   ): Promise<void> {
     if (this.isFallenBack) return this.fallbackAdapter.submitOffer(jobId, workerId, price, kind);
+    this.fallbackAdapter.submitOffer(jobId, workerId, price, kind);
     const { db } = getFirebase();
     const jobRef = doc(db, "jobs", jobId);
 
@@ -427,6 +466,7 @@ export class FirestoreAdapter implements StoreAdapter {
 
   async acceptOffer(jobId: string, offerId: string): Promise<void> {
     if (this.isFallenBack) return this.fallbackAdapter.acceptOffer(jobId, offerId);
+    this.fallbackAdapter.acceptOffer(jobId, offerId);
     const { db } = getFirebase();
     const jobRef = doc(db, "jobs", jobId);
 
@@ -491,6 +531,7 @@ export class FirestoreAdapter implements StoreAdapter {
 
   async advanceJob(jobId: string): Promise<void> {
     if (this.isFallenBack) return this.fallbackAdapter.advanceJob(jobId);
+    this.fallbackAdapter.advanceJob(jobId);
     const job = this.state.jobs.find((j) => j.id === jobId);
     if (!job) return;
 
@@ -512,6 +553,7 @@ export class FirestoreAdapter implements StoreAdapter {
 
   async submitReview(jobId: string, rating: number, text: string): Promise<void> {
     if (this.isFallenBack) return this.fallbackAdapter.submitReview(jobId, rating, text);
+    this.fallbackAdapter.submitReview(jobId, rating, text);
     const job = this.state.jobs.find((j) => j.id === jobId);
     if (!job || job.status !== "completed" || job.review || !job.assignedWorkerId)
       return;
@@ -662,6 +704,7 @@ export class FirestoreAdapter implements StoreAdapter {
 
   startJobWithOtp(jobId: string, otp: string): boolean {
     if (this.isFallenBack) return this.fallbackAdapter.startJobWithOtp(jobId, otp);
+    this.fallbackAdapter.startJobWithOtp(jobId, otp);
     const job = this.state.jobs.find((j) => j.id === jobId);
     if (!job || job.status !== "accepted") return false;
     if (job.startOtp && job.startOtp !== otp.trim()) {

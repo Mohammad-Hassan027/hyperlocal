@@ -49,14 +49,16 @@ export function getFirebase(): { app: FirebaseApp; auth: Auth; db: Firestore } {
   return { app, auth: auth!, db: db! };
 }
 
-export function ensureAnonymousAuth(auth: Auth): Promise<void> {
-  if (auth.currentUser) return Promise.resolve();
+export function ensureAnonymousAuth(auth: Auth, force = false): Promise<void> {
+  if (!force && auth.currentUser) return Promise.resolve();
+  if (force) authPromise = undefined;
   if (!authPromise) {
     authPromise = signInAnonymously(auth)
       .then(() => {})
       .catch((err) => {
         console.error("Firebase anonymous sign-in error:", err);
         authPromise = undefined;
+        throw err;
       });
   }
   return authPromise;

@@ -2,14 +2,14 @@
 
 **Hyperlocal skilled-worker booking for Bharat. Post a job, get a quote, start in 30 minutes.**
 
-> 🚧 **Demo project — all verification badges, identity checks, and ratings are simulated.**
-> Nothing is stored permanently; no real money moves.
+> 🚧 **Demo project** — verification badges, identity checks, and ratings are simulated.
+> No real money moves. No personal data is stored.
 
 ---
 
 ## The Problem
 
-Hiring a plumber in a Mumbai suburb takes 3–4 phone calls, opaque pricing, and a leap of faith.
+Hiring a plumber in suburban Mumbai takes 3–4 phone calls, opaque pricing, and a leap of faith.
 QuickKaam flips the script: the **customer names their budget**; nearby workers accept or counter in real time.
 Everyone sees the same live status — open → quoted → accepted → in-progress → done → reviewed.
 
@@ -17,7 +17,10 @@ Everyone sees the same live status — open → quoted → accepted → in-progr
 
 ## ▶ Live Demo
 
-**[quickkaam.vercel.app](https://quickkaam.vercel.app)** ← open in two tabs (Customer + Worker) to see live sync
+**[hyperlocal-seven-beige.vercel.app](https://hyperlocal-seven-beige.vercel.app)**
+
+Open in **two tabs** (`/customer` + `/worker`) to see live sync.  
+Add `?demo=1` to any URL to unlock the **Admin** tab and **Reset demo data** button.
 
 ---
 
@@ -33,7 +36,7 @@ flowchart LR
 
     subgraph Adapters["Dual StoreAdapter (lib/store/types.ts)"]
         direction TB
-        FSA["FirestoreAdapter\nlib/store/firestore.ts\n• onSnapshot live sync\n• runTransaction (concurrency)\n• Anonymous Auth\n• Graceful fallback on error"]
+        FSA["FirestoreAdapter\nlib/store/firestore.ts\n• await auth → then attach listeners\n• onSnapshot live sync\n• runTransaction (concurrency)\n• Retry once on permission-denied\n• Graceful fallback on error"]
         LSA["LocalStorageAdapter\nlib/store/local.ts\n• Zero-config offline\n• Cross-tab via storage events\n• Bot simulation built-in"]
         FSA -. "falls back to" .-> LSA
     end
@@ -74,8 +77,8 @@ cp .env.example .env.local
 npm run dev        # http://localhost:3000
 
 # 5 — Tests
-npm run lint       # 0 errors
-npm run test:unit  # 2/2 pass
+npm run lint           # 0 errors
+npm run test:unit      # 2/2 pass
 npm run test:matching  # 6/6 pass
 ```
 
@@ -92,29 +95,29 @@ npm run test:matching  # 6/6 pass
 | `NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID` | No | Firebase messaging sender |
 | `NEXT_PUBLIC_FIREBASE_APP_ID` | No | Firebase app ID |
 
-> All six vars are optional. Without them the app runs in full offline demo mode — zero external dependencies.
+> All six vars are optional. Without them the app runs in full offline demo mode.
 
-**Vercel:** add these in **Project → Settings → Environment Variables** (all environments), then trigger a redeploy.
+**Vercel:** add these in **Project → Settings → Environment Variables** as type **Config** (not Secret — `NEXT_PUBLIC_*` vars are always exposed to the browser by design). Select all three environments (Production, Preview, Development), then trigger a redeploy.
 
 ---
 
 ## Demo Script (5 steps, ~2 min)
 
-Open **two browser tabs** (or two devices on the same network):
+Open **two browser tabs**:
 
 | Tab | URL | Role |
 |---|---|---|
-| Tab A | `/customer` | Customer posting a job |
-| Tab B | `/worker` | Worker w1 (Rahul Sharma, Plumber) |
+| Tab A | `/customer` | Customer |
+| Tab B | `/worker` | Worker — Ramesh Yadav (Plumber, w1) |
 
 1. **Tab A — Post a job:**  
-   Select *Plumber* → click **Broadcast to 8 nearby** → description: `"Leaking kitchen tap"` → budget `₹250` → **Submit**
+   Select *Plumber* → click **Send to everyone nearby** → description: `"Leaking kitchen tap"` → budget `₹350` → **Send request**
 
 2. **Tab B — See it live:**  
-   The job appears instantly. Click **Take it (₹250)** or enter a counter (`₹300`) and click **Counter**.
+   The job appears instantly. Click **Take it for ₹350** (instant accept) or type a counter price and click **Send price**.
 
-3. **Tab A — Accept:**  
-   The offer arrives in real time. Click **Accept**. A **4-digit Start Code** appears on screen.
+3. **Tab A — Accept the offer:**  
+   The offer appears live. Click **Accept**. A **4-digit Start Code** appears on screen.
 
 4. **Tab B — Start the job:**  
    Enter the 4-digit code from Tab A → **Verify & Start Job**. Status flips to *In progress*.
@@ -122,7 +125,7 @@ Open **two browser tabs** (or two devices on the same network):
 5. **Tab B → Tab A — Finish:**  
    Worker clicks **Mark as done** → Customer leaves a ⭐⭐⭐⭐⭐ review.
 
-**Demo tools** (top-right menu): toggle bot workers on/off, change demo speed (1× / 20×), reset all data, run **Judge Mode** (full 90-second captioned auto-play).
+**Demo tools** (top-right menu): toggle bot workers, change demo speed (1× / 20×), run **Judge Mode** (full 75-second captioned auto-play). Add `?demo=1` to the URL to also see **Reset demo data** and the **Admin** tab.
 
 ---
 
@@ -131,16 +134,63 @@ Open **two browser tabs** (or two devices on the same network):
 | Feature | Status | Notes |
 |---|---|---|
 | Live job sync between devices | ✅ Real | Firestore `onSnapshot` |
+| Auth-before-listeners ordering | ✅ Real | `await ensureAnonymousAuth` before attaching `onSnapshot` |
 | Concurrent-accept safety | ✅ Real | Firestore `runTransaction` |
 | Anonymous auth | ✅ Real | Firebase Anonymous Auth |
+| Permission-denied retry | ✅ Real | Re-auths once, then falls back to local |
 | Offline fallback | ✅ Real | `LocalStorageAdapter` with cross-tab events |
-| OTP start flow | ✅ Real logic | 4-digit code generated & verified in-app |
+| OTP start flow | ✅ Real logic, 🟡 Demo only | 4-digit code generated & verified in-app; no SMS sent |
 | Worker identity / ID check | 🟡 Mock | File upload accepted but not stored or verified |
 | Background check badges | 🟡 Mock | Admin toggles badges — no real checks run |
 | Phone numbers | 🟡 Mock | Masked until accepted; dummy numbers only |
 | Payments | ❌ Not implemented | Agreed price shown; no payment gateway |
 | SMS / push notifications | 🟡 Simulated | In-app toast only; no real push |
 | GPS location | 🟡 Simulated | Worker movement animated between seed points |
+
+---
+
+## Firebase Setup
+
+### 1. Create a Firebase Project
+Open [Firebase Console](https://console.firebase.google.com/) → **Add Project** → name it (e.g. `quickkaam-demo`).
+
+### 2. Enable Anonymous Authentication
+**Build → Authentication → Get Started → Sign-in method → Anonymous → Enable → Save**
+
+### 3. Create Cloud Firestore
+**Build → Firestore Database → Create database** → choose a region (e.g. `asia-south1`) → **Production mode**
+
+### 4. Deploy Firestore Security Rules
+
+Install the Firebase CLI and log in:
+
+```bash
+npm install -g firebase-tools
+firebase login
+```
+
+This project ships with [`firebase.json`](./firebase.json), [`.firebaserc`](./firebaserc), and [`firestore.rules`](./firestore.rules) already configured for the `quickkaam-87aa5` project. To target your own project, update `.firebaserc`:
+
+```json
+{ "projects": { "default": "YOUR_PROJECT_ID" } }
+```
+
+Then deploy:
+
+```bash
+firebase deploy --only firestore:rules
+```
+
+The rules enforce:
+- Authentication required (`request.auth != null`)
+- Valid status transitions (`open` → `accepted` → `in_progress` → `completed`)
+- `assignedWorkerId` and `finalPrice` are immutable once set
+
+### 5. Set Environment Variables
+```bash
+cp .env.example .env.local
+# Fill in values from Firebase Console → Project Settings → Your apps → Web app
+```
 
 ---
 
@@ -164,7 +214,7 @@ Open **two browser tabs** (or two devices on the same network):
 | UI | React 19, Tailwind CSS v4 |
 | Language | TypeScript 5 |
 | State | `useSyncExternalStore` with dual adapter |
-| Realtime DB | Firebase Firestore v11 |
+| Realtime DB | Firebase JS SDK v13 / Firestore |
 | Maps | Leaflet.js (dynamic import, SSR-safe) |
 | Testing | Playwright (E2E), Vitest (unit), Node `--test` |
 | CI | GitHub Actions |
@@ -180,7 +230,7 @@ app/
   customer/           ← Customer booking flow
   worker/             ← Worker dashboard
   worker/join/        ← Worker onboarding (mock)
-  admin/              ← Badge management
+  admin/              ← Badge management (demo mode only)
   track/[jobId]/      ← Live-share tracking + SOS
 components/
   CustomerView.tsx    ← Map + worker cards + booking
@@ -191,9 +241,9 @@ components/
   JudgeModeOverlay.tsx← Captioned auto-demo banner
   ErrorBoundary.tsx   ← Per-route error catch
 lib/
-  store.ts            ← useStore hook (selector memoization)
+  store.ts            ← useStore hook (selector memoization + shallowEqual)
   store/local.ts      ← LocalStorageAdapter
-  store/firestore.ts  ← FirestoreAdapter + graceful fallback
+  store/firestore.ts  ← FirestoreAdapter + auth-before-listeners + retry
   matching.ts         ← Worker ranking algorithm
   judge.ts            ← Judge mode orchestration
   geo.ts              ← Haversine, preset locations
@@ -201,7 +251,7 @@ lib/
 tests/
   happy-path.mjs      ← Playwright E2E happy path
   matching.test.ts    ← Vitest unit tests
-  firestore-adapter.test.mjs ← Concurrency tests
+  firestore-adapter.test.mjs ← Concurrency + auth-ordering tests
 ```
 
 ---
@@ -210,7 +260,7 @@ tests/
 
 ```bash
 npm run lint             # ESLint (0 errors)
-npm run test:unit        # Node --test (Firestore concurrency)
+npm run test:unit        # Node --test (Firestore concurrency & auth ordering)
 npm run test:matching    # Vitest (matching algorithm)
 npm run test:e2e:happy   # Playwright full happy path
 ```
@@ -219,4 +269,4 @@ npm run test:e2e:happy   # Playwright full happy path
 
 ## License
 
-MIT — built as a demo/portfolio project. See [AGENTS.md](./AGENTS.md) for contributor guidelines.
+[MIT](./LICENSE) — built as a demo/portfolio project. See [AGENTS.md](./AGENTS.md) for contributor guidelines.

@@ -141,6 +141,10 @@ export class LocalStorageAdapter implements StoreAdapter {
     this.emit();
   }
 
+  setJobs(jobs: Job[]): void {
+    this.set({ ...this.state, jobs });
+  }
+
   setLocation(location: LatLng): void {
     this.set({ ...this.state, location });
   }
